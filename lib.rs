@@ -7,11 +7,7 @@ mod Rust_Tp_Final {
     use datetime::LocalDateTime;
     use ink::storage::Mapping;
     use ink::prelude::string::String;
-<<<<<<< HEAD
     use ink::storage::Lazy;
-=======
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
-
     // no es mejor usar #[ink::storage_item] ¿? segun el ink implementa todos los traits
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -59,11 +55,8 @@ mod Rust_Tp_Final {
     pub struct Pago{
         id:u32,
         socio_id: u32,
-<<<<<<< HEAD
         fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>, pa pregunta
-=======
         fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>,
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
         fecha_de_vencimiento:FechaTemporalDespuesBorrar, //datetime::LocalDateTime,
         monto:u128,
         tiene_bonificacion:bool // para saber si es con bonificacion, recorremos "pagos" del final al inicio,
@@ -79,26 +72,20 @@ mod Rust_Tp_Final {
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum TipoId{
-<<<<<<< HEAD
         Socio, Actividad, Categoria, Pago
-=======
         Socio, Actividad, Categoria, Pago,
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct MappingLens{
-<<<<<<< HEAD
         socios:u32,
         actividades:u32,
         categorias:u32,
-=======
         editores:u32,
         socios:u32,
         actividades:u32,
         categorias:u32,
         pagos:u32,
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
     }
 
     #[ink(storage)]
@@ -108,16 +95,13 @@ mod Rust_Tp_Final {
         socios:Mapping<u32,Socio>,
         actividades:Mapping<u32,Actividades>,
         categorias:Mapping<u32,Categoria>,
-<<<<<<< HEAD
         pagos:Lazy<Vec<Pago>>, // CONSULTAR 
-=======
         pagos:Mapping<u32,Pago>, // Si algún tipo que muestra estructura Packed se hace lo suficientemente grande (un Vec en crecimiento
             // constante podría ser un candidato perfecto para esto), romperá el contrato. Esto sucede porque para codificar y
             // decodificar elementos del storage, hay un buffer con solamente capacidad limitada (alrededor de 16KB en la configuración
             // por default) disponible. Esto significa que cada contrato que intente decodificar más que eso lanzará un error. Si uno
             // no está seguro del tamaño potencial que pueda adquirir una estructura de datos, se debería considerar usar un
             // ink! Mapping, que puede guardar un número arbitrario de elementos en cambio. https://use.ink/es/datastructures/storage-layout/
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
         mapping_lens:MappingLens,
         cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,
         porcentaje_de_descuento_por_bonificacion:u32,
@@ -129,23 +113,17 @@ mod Rust_Tp_Final {
         #[ink(constructor)]
         pub fn new(FINALBOSSAccountID:AccountId, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,mut porcentaje_de_descuento_por_bonificacion:u32)->Self{
             if porcentaje_de_descuento_por_bonificacion > 99 {porcentaje_de_descuento_por_bonificacion = 0} 
-            
-<<<<<<< HEAD
             let mut csr = Self{FINALBOSSAccountID,
-=======
             Self{FINALBOSSAccountID,
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
                 editores:Mapping::new(),
                 socios:Mapping::new(),
                 actividades:Mapping::new(),
                 categorias:Mapping::new(),
-<<<<<<< HEAD
                 pagos:Lazy::default(),
                 mapping_lens:MappingLens{
                     socios:0,
                     actividades:0,
                     categorias:0, },
-=======
                 pagos:Mapping::new(),
                 mapping_lens:MappingLens{
                     editores:0,
@@ -153,18 +131,14 @@ mod Rust_Tp_Final {
                     actividades:0,
                     categorias:0,
                     pagos:0,},
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
                 cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento,
                 porcentaje_de_descuento_por_bonificacion,
                 FECHA_DE_HOY_DESPUES_BORRAR:FechaTemporalDespuesBorrar { mes: 0 },
                 fecha_de_la_ultima_actualizacion:FechaTemporalDespuesBorrar { mes: 0 },
-<<<<<<< HEAD
                 };
             csr.pagos.set(&Vec::new());
             csr
-=======
                 }
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
         }
 
         // ----------- Metodos privados
@@ -179,11 +153,8 @@ mod Rust_Tp_Final {
         }
         fn nueva_id (&mut self,tipo_id:TipoId) -> u32{
             match tipo_id{
-<<<<<<< HEAD
                 TipoId::Pago => {return (self.pagos.get_or_default().len()+1) as u32},
-=======
                 TipoId::Pago => {self.mapping_lens.pagos +=1; return self.mapping_lens.pagos},
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
                 TipoId::Socio => {self.mapping_lens.socios +=1; return self.mapping_lens.socios},
                 TipoId::Actividad => {self.mapping_lens.actividades +=1; return self.mapping_lens.actividades},
                 TipoId::Categoria => {self.mapping_lens.categorias +=1; return self.mapping_lens.categorias},
@@ -191,24 +162,18 @@ mod Rust_Tp_Final {
         }
 
         fn socio_cumple_las_condiciones_para_obtener_la_bonificacion(&self,socio_id:u32) -> bool{
-<<<<<<< HEAD
             let pagos = self.pagos.get_or_default();
             let cant_pagos = pagos.len();
             if cant_pagos < self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento as usize {return false;}
-=======
             let cant_pagos = self.mapping_lens.pagos;
             if cant_pagos < 3 {return false;}
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
 
             let mut cant_pagos_del_usuario =0; 
             let mut cant_pagos_del_usuario_que_cumplen_la_condicion =0; 
 
             for i in (0..cant_pagos).rev() {
-<<<<<<< HEAD
                 let pago = pagos.get(i).unwrap();
-=======
                 let pago = self.pagos.get(i).unwrap();
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
                 
                 if pago.socio_id==socio_id {
                     cant_pagos_del_usuario+=1;                    
@@ -218,21 +183,18 @@ mod Rust_Tp_Final {
                 }
                 
                 if cant_pagos_del_usuario==self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento ||
-<<<<<<< HEAD
                 cant_pagos_del_usuario>cant_pagos_del_usuario_que_cumplen_la_condicion {break;}
             }
             return cant_pagos_del_usuario_que_cumplen_la_condicion==self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento;
         }
         fn pago_esta_vencido(&self,pago:&Pago) -> bool{
             if let Some(fecha_de_pago) = pago.fecha_de_pago.clone(){
-=======
                 cant_pagos_del_usuario>cant_pagos_del_usuario_que_cumplen_la_condicion {break;}
             }
             return cant_pagos_del_usuario_que_cumplen_la_condicion==self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento;
         }
         fn pago_esta_vencido(&self,pago:Pago) -> bool{
             if let Some(fecha_de_pago) = pago.fecha_de_pago{
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
                 return fecha_de_pago.mes < pago.fecha_de_vencimiento.mes // aca tiene que ser todo menor, pero en la fecha temporal solo implemente el mes
             }
             false
@@ -250,7 +212,6 @@ mod Rust_Tp_Final {
             fecha_de_vencimiento/* datetime::LocalDateTime::now().add_seconds(604800)*/, // reemplazar 604800 por una constante cantidad_segundos_por_dia
             monto:(monto_cuota as u128), 
             tiene_bonificacion:cumple_las_condiciones_para_obtener_la_bonificacion}; 
-<<<<<<< HEAD
             
             let mut pagos = self.pagos.get_or_default();
             pagos.push(cuota);
@@ -281,12 +242,8 @@ mod Rust_Tp_Final {
             res
         }
         fn SLICE_O_PAGINACION_QUE_ES_ESO(&self, vec:Vec<Pago>) -> Vec<Pago>{ // CONSULTAR
-            vec
-=======
-
             self.pagos.insert(cuota.id, &cuota);
             true
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
         }
 
 
@@ -301,11 +258,9 @@ mod Rust_Tp_Final {
             false
         }
         #[ink(message)]
-<<<<<<< HEAD
         pub fn autorizar_editor (&mut self, nuevo_editor:AccountId) -> bool{
-=======
+
         pub fn agregar_editor (&mut self, nuevo_editor:AccountId) -> bool{
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
             if self.es_FINALBOSS(){
                 self.editores.insert(nuevo_editor.clone(),&nuevo_editor); 
                 return true;
@@ -313,11 +268,10 @@ mod Rust_Tp_Final {
             false
         }
         #[ink(message)]
-<<<<<<< HEAD
         pub fn desautorizar_editor (&mut self, editor:AccountId) -> bool{
-=======
+            true
+        }
         pub fn quitar_editor (&mut self, editor:AccountId) -> bool{
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
             if self.es_FINALBOSS(){
                 self.editores.remove(editor);
                 return true;
@@ -346,8 +300,6 @@ mod Rust_Tp_Final {
             return self.crear_cuota_para_socio(socio.id, FechaTemporalDespuesBorrar {mes:0}
                                             /* datetime::LocalDateTime::now().add_seconds(604800)*/); 
                                         // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
-<<<<<<< HEAD
-=======
         }
 
         #[ink(message)]
@@ -388,7 +340,6 @@ mod Rust_Tp_Final {
         #[ink(message)]
         pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32)->u32{
             self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento
->>>>>>> 09cfaf93b13ebd8b46bf5b910ffa1dcad401f7a1
         }
 
         #[ink(message)]
@@ -465,6 +416,5 @@ mod Rust_Tp_Final {
     #[cfg(test)]
     mod tests {
     }
-    }
-    }
+}
 }
