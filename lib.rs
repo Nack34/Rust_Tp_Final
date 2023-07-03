@@ -2,10 +2,13 @@
 
 #[ink::contract]
 mod Rust_Tp_Final {
+    use core::iter;
+
     use datetime::LocalDateTime;
     use ink::storage::Mapping;
     use ink::prelude::string::String;
     use ink::storage::Lazy;
+
     // no es mejor usar #[ink::storage_item] ¿? segun el ink implementa todos los traits
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -69,7 +72,7 @@ mod Rust_Tp_Final {
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum TipoId{
-        Socio, Actividad, Categoria, Pago,
+        Socio, Actividad, Categoria, Pago
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -77,8 +80,6 @@ mod Rust_Tp_Final {
         socios:u32,
         actividades:u32,
         categorias:u32,
-        editores:u32,
-        pagos:u32,
     }
 
     #[ink(storage)]
@@ -108,11 +109,9 @@ mod Rust_Tp_Final {
                 categorias:Mapping::new(),
                 pagos:Lazy::default(),
                 mapping_lens:MappingLens{
-                    editores:0,
                     socios:0,
                     actividades:0,
-                    categorias:0,
-                    pagos:0,},
+                    categorias:0, },
                 cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento,
                 porcentaje_de_descuento_por_bonificacion,
                 FECHA_DE_HOY_DESPUES_BORRAR:FechaTemporalDespuesBorrar { mes: 0 },
@@ -267,22 +266,6 @@ mod Rust_Tp_Final {
                                         // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
         }
 
-        // ----------- Getters
-
-        #[ink(message)]
-        pub fn soy_FINNALBOSS(&self) -> bool{
-            self.es_FINALBOSS()
-        }
-        #[ink(message)]
-        pub fn puedo_editar(&self) -> bool{
-            self.tiene_permiso()
-        }
-
-        #[ink(message)]
-        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self)->u32{
-            self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento
-        }
-
         #[ink(message)]
         pub fn actualizacion_mensual(&mut self) -> bool{ // si no se actualiza por varios meses pero SI se crean socios,
                                                         // hay un problema: se le van a agregar cuotas a pagar a los socios nuevos
@@ -328,6 +311,19 @@ mod Rust_Tp_Final {
 
         // ----------- Getters
 
+        #[ink(message)]
+        pub fn soy_FINNALBOSS(&self) -> bool{
+            self.es_FINALBOSS()
+        }
+        #[ink(message)]
+        pub fn puedo_editar(&self) -> bool{
+            self.tiene_permiso()
+        }
+
+        #[ink(message)]
+        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32)->u32{
+            self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento
+        }
 
         #[ink(message)]
         pub fn consulta_de_pago(&self, dni_ingresado:Option<u32>)->Option<Vec<Pago>>{ 
