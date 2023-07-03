@@ -2,8 +2,6 @@
 
 #[ink::contract]
 mod Rust_Tp_Final {
-    use core::iter;
-
     use datetime::LocalDateTime;
     use ink::storage::Mapping;
     use ink::prelude::string::String;
@@ -56,7 +54,6 @@ mod Rust_Tp_Final {
         id:u32,
         socio_id: u32,
         fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>, pa pregunta
-        fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>,
         fecha_de_vencimiento:FechaTemporalDespuesBorrar, //datetime::LocalDateTime,
         monto:u128,
         tiene_bonificacion:bool // para saber si es con bonificacion, recorremos "pagos" del final al inicio,
@@ -72,7 +69,6 @@ mod Rust_Tp_Final {
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum TipoId{
-        Socio, Actividad, Categoria, Pago
         Socio, Actividad, Categoria, Pago,
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
@@ -82,9 +78,6 @@ mod Rust_Tp_Final {
         actividades:u32,
         categorias:u32,
         editores:u32,
-        socios:u32,
-        actividades:u32,
-        categorias:u32,
         pagos:u32,
     }
 
@@ -96,12 +89,6 @@ mod Rust_Tp_Final {
         actividades:Mapping<u32,Actividades>,
         categorias:Mapping<u32,Categoria>,
         pagos:Lazy<Vec<Pago>>, // CONSULTAR 
-        pagos:Mapping<u32,Pago>, // Si algún tipo que muestra estructura Packed se hace lo suficientemente grande (un Vec en crecimiento
-            // constante podría ser un candidato perfecto para esto), romperá el contrato. Esto sucede porque para codificar y
-            // decodificar elementos del storage, hay un buffer con solamente capacidad limitada (alrededor de 16KB en la configuración
-            // por default) disponible. Esto significa que cada contrato que intente decodificar más que eso lanzará un error. Si uno
-            // no está seguro del tamaño potencial que pueda adquirir una estructura de datos, se debería considerar usar un
-            // ink! Mapping, que puede guardar un número arbitrario de elementos en cambio. https://use.ink/es/datastructures/storage-layout/
         mapping_lens:MappingLens,
         cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,
         porcentaje_de_descuento_por_bonificacion:u32,
@@ -113,18 +100,13 @@ mod Rust_Tp_Final {
         #[ink(constructor)]
         pub fn new(FINALBOSSAccountID:AccountId, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,mut porcentaje_de_descuento_por_bonificacion:u32)->Self{
             if porcentaje_de_descuento_por_bonificacion > 99 {porcentaje_de_descuento_por_bonificacion = 0} 
+            
             let mut csr = Self{FINALBOSSAccountID,
-            Self{FINALBOSSAccountID,
                 editores:Mapping::new(),
                 socios:Mapping::new(),
                 actividades:Mapping::new(),
                 categorias:Mapping::new(),
                 pagos:Lazy::default(),
-                mapping_lens:MappingLens{
-                    socios:0,
-                    actividades:0,
-                    categorias:0, },
-                pagos:Mapping::new(),
                 mapping_lens:MappingLens{
                     editores:0,
                     socios:0,
@@ -138,7 +120,6 @@ mod Rust_Tp_Final {
                 };
             csr.pagos.set(&Vec::new());
             csr
-                }
         }
 
         // ----------- Metodos privados
@@ -154,7 +135,6 @@ mod Rust_Tp_Final {
         fn nueva_id (&mut self,tipo_id:TipoId) -> u32{
             match tipo_id{
                 TipoId::Pago => {return (self.pagos.get_or_default().len()+1) as u32},
-                TipoId::Pago => {self.mapping_lens.pagos +=1; return self.mapping_lens.pagos},
                 TipoId::Socio => {self.mapping_lens.socios +=1; return self.mapping_lens.socios},
                 TipoId::Actividad => {self.mapping_lens.actividades +=1; return self.mapping_lens.actividades},
                 TipoId::Categoria => {self.mapping_lens.categorias +=1; return self.mapping_lens.categorias},
@@ -165,15 +145,12 @@ mod Rust_Tp_Final {
             let pagos = self.pagos.get_or_default();
             let cant_pagos = pagos.len();
             if cant_pagos < self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento as usize {return false;}
-            let cant_pagos = self.mapping_lens.pagos;
-            if cant_pagos < 3 {return false;}
 
             let mut cant_pagos_del_usuario =0; 
             let mut cant_pagos_del_usuario_que_cumplen_la_condicion =0; 
 
             for i in (0..cant_pagos).rev() {
                 let pago = pagos.get(i).unwrap();
-                let pago = self.pagos.get(i).unwrap();
                 
                 if pago.socio_id==socio_id {
                     cant_pagos_del_usuario+=1;                    
@@ -189,12 +166,6 @@ mod Rust_Tp_Final {
         }
         fn pago_esta_vencido(&self,pago:&Pago) -> bool{
             if let Some(fecha_de_pago) = pago.fecha_de_pago.clone(){
-                cant_pagos_del_usuario>cant_pagos_del_usuario_que_cumplen_la_condicion {break;}
-            }
-            return cant_pagos_del_usuario_que_cumplen_la_condicion==self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento;
-        }
-        fn pago_esta_vencido(&self,pago:Pago) -> bool{
-            if let Some(fecha_de_pago) = pago.fecha_de_pago{
                 return fecha_de_pago.mes < pago.fecha_de_vencimiento.mes // aca tiene que ser todo menor, pero en la fecha temporal solo implemente el mes
             }
             false
@@ -242,8 +213,7 @@ mod Rust_Tp_Final {
             res
         }
         fn SLICE_O_PAGINACION_QUE_ES_ESO(&self, vec:Vec<Pago>) -> Vec<Pago>{ // CONSULTAR
-            self.pagos.insert(cuota.id, &cuota);
-            true
+            vec
         }
 
 
@@ -259,8 +229,6 @@ mod Rust_Tp_Final {
         }
         #[ink(message)]
         pub fn autorizar_editor (&mut self, nuevo_editor:AccountId) -> bool{
-
-        pub fn agregar_editor (&mut self, nuevo_editor:AccountId) -> bool{
             if self.es_FINALBOSS(){
                 self.editores.insert(nuevo_editor.clone(),&nuevo_editor); 
                 return true;
@@ -269,9 +237,6 @@ mod Rust_Tp_Final {
         }
         #[ink(message)]
         pub fn desautorizar_editor (&mut self, editor:AccountId) -> bool{
-            true
-        }
-        pub fn quitar_editor (&mut self, editor:AccountId) -> bool{
             if self.es_FINALBOSS(){
                 self.editores.remove(editor);
                 return true;
@@ -302,30 +267,6 @@ mod Rust_Tp_Final {
                                         // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
         }
 
-        #[ink(message)]
-        pub fn actualizacion_mensual(&mut self) -> bool{ // si no se actualiza por varios meses pero SI se crean socios,
-                                                        // hay un problema: se le van a agregar cuotas a pagar a los socios nuevos
-                                                        // con fecha ANTERIOR a la fecha en la que esos socios se hayan registrado.
-                                                        // Una posibilidad es hacer lo que dijo el prof: que este metodo tmb sea llamado
-                                                        // cada vez que se realiza un pago, pero si no se realizan pagos x un tiempo,
-                                                        // estamos en la misma. Otra solucion que si funcionaria es agregar el campo
-                                                        // "fecha_de_registro" a los socios, y cuando se agrega un socio se setea como
-                                                        // la fecha actual. Eso funcionaria y solo cambiaria un poco la logica de este metodo 
-            if !self.tiene_permiso() {return false;}
-            let meses_desde_la_ultima_actualizacion = self.FECHA_DE_HOY_DESPUES_BORRAR.mes - self.fecha_de_la_ultima_actualizacion.mes;
-            if !(meses_desde_la_ultima_actualizacion>0) {return false;}
-
-            for mes in self.fecha_de_la_ultima_actualizacion.mes+1..self.FECHA_DE_HOY_DESPUES_BORRAR.mes+1 { // el ultimo mes registrado no quiero repetirlo y el mes actual si quiero registrarlo 
-                for i in 1..self.mapping_lens.socios+1 {
-                    self.crear_cuota_para_socio(i, FechaTemporalDespuesBorrar {mes}
-                                            /* datetime::LocalDateTime::mes().add_seconds(604800)*/); 
-                                        // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
-                }
-            }
-            self.fecha_de_la_ultima_actualizacion = self.FECHA_DE_HOY_DESPUES_BORRAR.clone();
-            true
-        }
-
         // ----------- Getters
 
         #[ink(message)]
@@ -338,7 +279,7 @@ mod Rust_Tp_Final {
         }
 
         #[ink(message)]
-        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32)->u32{
+        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self)->u32{
             self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento
         }
 
@@ -387,19 +328,6 @@ mod Rust_Tp_Final {
 
         // ----------- Getters
 
-        #[ink(message)]
-        pub fn soy_FINNALBOSS(&self) -> bool{
-            self.es_FINALBOSS()
-        }
-        #[ink(message)]
-        pub fn puedo_editar(&self) -> bool{
-            self.tiene_permiso()
-        }
-
-        #[ink(message)]
-        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32)->u32{
-            self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento
-        }
 
         #[ink(message)]
         pub fn consulta_de_pago(&self, dni_ingresado:Option<u32>)->Option<Vec<Pago>>{ 
@@ -416,5 +344,4 @@ mod Rust_Tp_Final {
     #[cfg(test)]
     mod tests {
     }
-}
 }
