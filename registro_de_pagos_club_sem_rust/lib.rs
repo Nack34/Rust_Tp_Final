@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
-
+pub use registro_de_pagos_club_sem_rust::ClubSemRustRef; // CONSULTA: POR QUE NO TODO EL NOMBRE?
 #[ink::contract]
-mod Rust_Tp_Final {
+mod registro_de_pagos_club_sem_rust {
     use core::iter;
 
     use datetime::LocalDateTime;
@@ -61,7 +61,7 @@ mod Rust_Tp_Final {
         monto:u128,
         tiene_bonificacion:bool
     }
-    #[derive(scale::Decode, scale::Encode,Debug,Clone)]
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct FechaTemporalDespuesBorrar{
         mes:u32
@@ -212,6 +212,21 @@ mod Rust_Tp_Final {
         fn SLICE_O_PAGINACION_QUE_ES_ESO(&self, vec:Vec<Pago>) -> Vec<Pago>{ // CONSULTAR
             vec
         }
+        
+        fn get_primer_pago_sin_acreditar(&self, socio_id:u32) -> Option<Pago>{
+            self.pagos.get_or_default().iter().filter(|p|p.id == socio_id).next().cloned()
+        }
+        fn marcar_pago_pagado(&mut self, pago_id:u32) -> bool{
+            let mut pagos = self.pagos.get_or_default();
+            if pagos.len()<pago_id as usize {return false;};
+
+            if let Some(_) = pagos[pago_id as usize].fecha_de_pago.clone(){return false;};
+
+            pagos[pago_id as usize].fecha_de_pago = Some(self.FECHA_DE_HOY_DESPUES_BORRAR.clone());
+            self.pagos.set(&pagos);
+            
+            true
+        }
 
 
         // ----------- Setters 
@@ -287,21 +302,6 @@ mod Rust_Tp_Final {
             self.fecha_de_la_ultima_actualizacion = self.FECHA_DE_HOY_DESPUES_BORRAR.clone();
             true
         }
-        
-        fn get_primer_pago_sin_acreditar(&self, socio_id:u32) -> Option<Pago>{
-            self.pagos.get_or_default().iter().filter(|p|p.id == socio_id).next().cloned()
-        }
-        fn marcar_pago_pagado(&mut self, pago_id:u32) -> bool{
-            let mut pagos = self.pagos.get_or_default();
-            if pagos.len()<pago_id as usize {return false;};
-
-            if let Some(_) = pagos[pago_id as usize].fecha_de_pago.clone(){return false;};
-
-            pagos[pago_id as usize].fecha_de_pago = Some(self.FECHA_DE_HOY_DESPUES_BORRAR.clone());
-            self.pagos.set(&pagos);
-            
-            true
-        }
 
         #[ink(message)]
         pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> bool{
@@ -342,6 +342,14 @@ mod Rust_Tp_Final {
             let pagos_de_un_socio=self.listar_pagos(socio.id);
             Some (self.SLICE_O_PAGINACION_QUE_ES_ESO(pagos_de_un_socio))
         }
+
+        #[ink(message)]
+        pub fn get_pagos(&self) -> Vec<Pago>{
+            self.pagos.get_or_default()
+        }
+
+        pub fn categoria_de(&self,socio_id:u32)->u32{0} // CONSULTAR: ESTO ESTA BIEN? ESTAS ACCEDIENDO A LA PRIVACIDAD DEL SOCIO PARA OBTENER SUS DATOS
+
     }
 
     // CONSULTAS: 

@@ -1,55 +1,125 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
+/* en cargo.toml tiene que ir:
+
+registro_de_pagos_club_sem_rust = { path = "Rust_Tp_Final/registro_de_pagos_club_sem_rust" /* COMO SE PONE EL PATH??? */, default-features = false, features = ["ink-as-dependency"] }
+
+
+std = [
+    "ink/std",
+    
+    //COSAS
+    
+    "Rust_Tp_Final/registro_de_pagos_club_sem_rust/std", //ACA VA EL PATH O QUE COSA? QUE ES STD
+]
+
+ */
+
+
 #[ink::contract]
 mod reportes_club_sem_rust {
+    //use registro_de_pagos_club_sem_rust::ClubSemRustRef; // BORRAR LO DE ABAJO Y CAMBIARLO X ESTA LINEA D CODIGO
 
-    /// Defines the storage of your contract.
-    /// Add new fields to the below struct in order
-    /// to add new static storage fields to your contract.
+    #[derive(scale::Decode, scale::Encode,Debug)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub struct ClubSemRustRef{}
+    impl ClubSemRustRef {
+        //setters
+        pub fn set_FINALBOSS (&mut self, nuevo_FINALBOSSAccountID:AccountId) -> bool{false}
+        pub fn autorizar_editor (&mut self, nuevo_editor:AccountId) -> bool{false}
+        pub fn desautorizar_editor (&mut self, editor:AccountId) -> bool{false}
+        pub fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(&mut self,cant:u32) -> bool{false}
+        pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria_id:u32) -> bool{false}
+        pub fn actualizacion_mensual(&mut self) -> bool{false}
+        pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> bool{false}
+        //getters
+        pub fn soy_FINNALBOSS(&self) -> bool{false}
+        pub fn puedo_editar(&self) -> bool{false}
+        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32)->u32{0}
+        pub fn consulta_de_pago(&self, dni_ingresado:Option<u32>)->Option<Vec<Pago>>{None}
+        pub fn get_pagos(&self) -> Vec<Pago>{Vec::new()}
+        pub fn categoria_de(&self,socio_id:u32)->u32{0}
+    }
+    #[derive(scale::Decode, scale::Encode,Debug,Clone)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub struct Pago{
+        id:u32,
+        socio_id: u32,
+        fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>, //pa pregunta
+        fecha_de_vencimiento:FechaTemporalDespuesBorrar, //datetime::LocalDateTime,
+        monto:u128,
+        tiene_bonificacion:bool
+    }
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub struct FechaTemporalDespuesBorrar{
+        mes:u32
+    }
+
+
+
+    // VOLAR TODO LO DE ARRIBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+
+/* 
+
+
+ */
+
+
+    
     #[ink(storage)]
     pub struct ReportesClubSemRust {
-        /// Stores a single `bool` value on the storage.
-        value: bool,
+        club_sem_rust: ClubSemRustRef,
     }
 
     impl ReportesClubSemRust {
-        /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
-        pub fn new(init_value: bool) -> Self {
-            Self { value: init_value }
+        pub fn new(club_sem_rust: ClubSemRustRef) -> Self {
+            Self { club_sem_rust }
         }
 
-        /// Constructor that initializes the `bool` value to `false`.
-        ///
-        /// Constructors can delegate to other constructors.
-        #[ink(constructor)]
-        pub fn default() -> Self {
-            Self::new(Default::default())
-        }
-
-        fn caca(a:u32){}
-
-        /// A message that can be called on instantiated contracts.
-        /// This one flips the value of the stored `bool` from `true`
-        /// to `false` and vice versa.
         #[ink(message)]
-        pub fn flip(&mut self) {
-            self.value = !self.value;
+        /// Se realiza un Vec de id_de_usuarios agregando aquellos socios morosos del Vec<Pagos>
+        pub fn verificacion_de_pagos_pendientes(&self) -> Vec<u32>{
+            self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago.is_none()).map(|p|p.id).collect()
         }
 
-        /// Simply returns the current value of our `bool`.
         #[ink(message)]
-        pub fn get(&self) -> bool {
-            self.value
+        // CONSULTA: ¿el informe es del mes anterior o de todos los meses de los que se tiene registro?
+        /// Se realiza un Vec de platita de cada categoria de cada mes
+        pub fn informe_recaudacion_mensual(&self) ->  Vec<Vec<u128>>{
+            let cant_meses = 15; // CONSULTA: COMO SABEMOS LA CANT DE MESES???
+            let cant_categorias = 5; // CONSULTA: COMO SABEMOS LA CANT DE categorias???
+            let mut monto_categorias_mensual = vec![vec![0;cant_meses];cant_categorias];
+            
+            self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago.is_some())
+            .for_each(|p|
+                monto_categorias_mensual[self.club_sem_rust.categoria_de(p.socio_id) as usize][p.fecha_de_pago.clone().unwrap().mes as usize]+=p.monto
+            );
+            monto_categorias_mensual
         }
+
+        #[ink(message)]
+        /// Dado un ID_actividad, retorna un listado de IDs de socios no morosos, cuyo plan les permita la asistencia a la actividad dada
+        pub fn informe_no_morosos_de_actividad(&self, ID_actividad: u32) -> Vec<u32> {
+            //self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago.is_some() &&
+            //     p.socio_id )
+            //.map(|p|p.id).collect()
+            Vec::new() // REPLANTEAR LO DE CATEGORIA PARA LA CATEGORIA B
+        } 
+        
     }
+
+
+
 
     /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
     /// module and test functions are marked with a `#[test]` attribute.
     /// The below code is technically just normal Rust code.
     #[cfg(test)]
     mod tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
+        /*/// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
 
         /// We test if the default constructor does its job.
@@ -66,79 +136,7 @@ mod reportes_club_sem_rust {
             assert_eq!(reportes_club_sem_rust.get(), false);
             reportes_club_sem_rust.flip();
             assert_eq!(reportes_club_sem_rust.get(), true);
-        }
+        }*/
     }
 
-
-    /// This is how you'd write end-to-end (E2E) or integration tests for ink! contracts.
-    ///
-    /// When running these you need to make sure that you:
-    /// - Compile the tests with the `e2e-tests` feature flag enabled (`--features e2e-tests`)
-    /// - Are running a Substrate node which contains `pallet-contracts` in the background
-    #[cfg(all(test, feature = "e2e-tests"))]
-    mod e2e_tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
-        use super::*;
-
-        /// A helper function used for calling contract messages.
-        use ink_e2e::build_message;
-
-        /// The End-to-End test `Result` type.
-        type E2EResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-        /// We test that we can upload and instantiate the contract using its default constructor.
-        #[ink_e2e::test]
-        async fn default_works(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-            // Given
-            let constructor = ReportesClubSemRustRef::default();
-
-            // When
-            let contract_account_id = client
-                .instantiate("reportes_club_sem_rust", &ink_e2e::alice(), constructor, 0, None)
-                .await
-                .expect("instantiate failed")
-                .account_id;
-
-            // Then
-            let get = build_message::<ReportesClubSemRustRef>(contract_account_id.clone())
-                .call(|reportes_club_sem_rust| reportes_club_sem_rust.get());
-            let get_result = client.call_dry_run(&ink_e2e::alice(), &get, 0, None).await;
-            assert!(matches!(get_result.return_value(), false));
-
-            Ok(())
-        }
-
-        /// We test that we can read and write a value from the on-chain contract contract.
-        #[ink_e2e::test]
-        async fn it_works(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-            // Given
-            let constructor = ReportesClubSemRustRef::new(false);
-            let contract_account_id = client
-                .instantiate("reportes_club_sem_rust", &ink_e2e::bob(), constructor, 0, None)
-                .await
-                .expect("instantiate failed")
-                .account_id;
-
-            let get = build_message::<ReportesClubSemRustRef>(contract_account_id.clone())
-                .call(|reportes_club_sem_rust| reportes_club_sem_rust.get());
-            let get_result = client.call_dry_run(&ink_e2e::bob(), &get, 0, None).await;
-            assert!(matches!(get_result.return_value(), false));
-
-            // When
-            let flip = build_message::<ReportesClubSemRustRef>(contract_account_id.clone())
-                .call(|reportes_club_sem_rust| reportes_club_sem_rust.flip());
-            let _flip_result = client
-                .call(&ink_e2e::bob(), flip, 0, None)
-                .await
-                .expect("flip failed");
-
-            // Then
-            let get = build_message::<ReportesClubSemRustRef>(contract_account_id.clone())
-                .call(|reportes_club_sem_rust| reportes_club_sem_rust.get());
-            let get_result = client.call_dry_run(&ink_e2e::bob(), &get, 0, None).await;
-            assert!(matches!(get_result.return_value(), true));
-
-            Ok(())
-        }
-    }
 }
