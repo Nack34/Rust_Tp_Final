@@ -42,7 +42,7 @@ mod Rust_Tp_Final {
         id:u32,
         nombre:String,
         costo_mensual_en_tokens:u32,
-        //id_de_actividades_accesibles: no encuentro un hashset
+        id_de_actividades_accesibles: Vec<u32>,
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -56,12 +56,10 @@ mod Rust_Tp_Final {
     pub struct Pago{
         id:u32,
         socio_id: u32,
-        fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>, pa pregunta
+        fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>, //pa pregunta
         fecha_de_vencimiento:FechaTemporalDespuesBorrar, //datetime::LocalDateTime,
         monto:u128,
-        tiene_bonificacion:bool // para saber si es con bonificacion, recorremos "pagos" del final al inicio,
-        // si contamos 3 sin llegar al inicio, sin encontrar alguno fuera de fecha y sin llegar a otro con bonificacion,
-        // entonces este tendra bonificacion
+        tiene_bonificacion:bool
     }
     #[derive(scale::Decode, scale::Encode,Debug,Clone)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -290,23 +288,34 @@ mod Rust_Tp_Final {
             true
         }
         
-        #[ink(message)]
-        pub fn registrar_nuevo_pago(&self, dni_socio:u32, monto:u32 ) -> bool{
-            if !self.tiene_permiso() {return false;}
-            let Some(socio) = self.get_socio_dni(dni_socio) else {return false;};
-            // CONSULTA: "El sistema deberá verificar que el monto pagado corresponda a la categoría del socio", no tendria que corresponder al
-            // monto en el pago a pagar? Puede ser que corresponda a la categoria, pero que el pago tenga bonificacion.
+        fn get_primer_pago_sin_acreditar(&self, socio_id:u32) -> Option<Pago>{
+            self.pagos.get_or_default().iter().filter(|p|p.id == socio_id).next().cloned()
+        }
+        fn marcar_pago_pagado(&mut self, pago_id:u32) -> bool{
+            let mut pagos = self.pagos.get_or_default();
+            if pagos.len()<pago_id as usize {return false;};
 
-            // CONSULTA: "El sistema deberá verificar que el monto pagado corresponda a la categoría del socio", que significa "corrasponder"? que
-            // sea igual? que sea mayor? Y si es menor, no se tendria que restar el monto entrante a la deuda?
+            if let Some(_) = pagos[pago_id as usize].fecha_de_pago.clone(){return false;};
 
-            // CONSULTA: Tomamos como que el monto entrante ya le fue descontado al socio? Que pasa si no tiene deuda o si el monto es mayor? Pierde
-            // plata?
-
-            // CONSULTA: el monto va al ultimo pago sin pagar o al primer pago sin pagar? Lo normal seria al primero, pero al ultimo es bastante
-            // mas eficiente, ya que recorres el Vec desde el final al inicio y te quedas con el primero
+            pagos[pago_id as usize].fecha_de_pago = Some(self.FECHA_DE_HOY_DESPUES_BORRAR.clone());
+            self.pagos.set(&pagos);
             
             true
+        }
+
+        #[ink(message)]
+        pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> bool{
+            if !self.tiene_permiso() {return false;}
+            let Some(socio) = self.get_socio_dni(dni_socio) else {return false;};
+            
+            let Some(pago) = self.get_primer_pago_sin_acreditar(socio.id) else {return false;};
+            if !(pago.monto == monto as u128) {return false;};
+
+            self.marcar_pago_pagado(pago.id)
+
+            // CONSULTA: Tomamos como que el monto entrante ya le fue descontado al socio? Que pasa si no tiene deuda o si el monto es mayor? Pierde
+            // plata? NO SABEMOSSSSSSSSSSSSSSSSS
+            
         }
 
         // ----------- Getters
@@ -334,6 +343,13 @@ mod Rust_Tp_Final {
             Some (self.SLICE_O_PAGINACION_QUE_ES_ESO(pagos_de_un_socio))
         }
     }
+
+    // CONSULTAS: 
+        // 1- BOOOOOOOOOOOOOOL PORFAVORRRRRRRRRRRRR
+        // 2- Metodo actualizacion_mensual
+        // 3- Fecha? Que hacemos? "the trait bound `LocalDateTime: TypeInfo` is not satisfied"
+        // 4- Metodo registrar_nuevo_pago
+    
     /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
     /// module and test functions are marked with a `#[test]` attribute.
     /// The below code is technically just normal Rust code.
