@@ -27,6 +27,8 @@ mod reportes_club_sem_rust {
             Self::new(Default::default())
         }
 
+        fn caca(a:u32){}
+
         /// A message that can be called on instantiated contracts.
         /// This one flips the value of the stored `bool` from `true`
         /// to `false` and vice versa.
