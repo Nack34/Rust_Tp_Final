@@ -9,13 +9,17 @@ mod registro_de_pagos_club_sem_rust {
     use ink::prelude::string::String;
     use ink::storage::Lazy;
 
-    // no es mejor usar #[ink::storage_item] ¿? segun el ink implementa todos los traits
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub enum CategoriasDisponibles{
+    pub enum Categoria{ 
         A,
-        B{id_deporte:u32},
+        B{id_deporte_seleccionado_por_el_usuario:u32},
         C
+    }
+    impl Categoria {
+        fn discriminant(&self) -> u32 {
+            unsafe { *(self as *const Self as *const u32) }
+        }
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -36,19 +40,19 @@ mod registro_de_pagos_club_sem_rust {
         apellido:String,
         dni:u32
     }
-    #[derive(scale::Decode, scale::Encode,Debug)]
+    #[derive(scale::Decode, scale::Encode,Debug,Clone)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct Categoria{
-        id:u32,
+    pub struct DatosCategoria{
+        id:u32, // el id es el enum convertido en u32
         nombre:String,
         costo_mensual_en_tokens:u32,
-        id_de_actividades_accesibles: Vec<u32>,
+        id_de_actividades_accesibles_base: Vec<u32>,
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct Socio{
         id:u32,
-        categoria_id:u32,
+        categoria:Categoria,
         datos_personales:DatosPersonalesSocio
     }
     #[derive(scale::Decode, scale::Encode,Debug,Clone)]
@@ -70,14 +74,13 @@ mod registro_de_pagos_club_sem_rust {
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum TipoId{
-        Socio, Actividad, Categoria, Pago
+        Socio, Actividad, Pago,
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct MappingLens{
         socios:u32,
         actividades:u32,
-        categorias:u32,
     }
 
     #[ink(storage)]
@@ -86,7 +89,7 @@ mod registro_de_pagos_club_sem_rust {
         editores:Mapping<AccountId,AccountId>,
         socios:Mapping<u32,Socio>,
         actividades:Mapping<u32,Actividades>,
-        categorias:Mapping<u32,Categoria>,
+        categorias:Mapping<u32,DatosCategoria>,
         pagos:Lazy<Vec<Pago>>, // CONSULTAR 
         mapping_lens:MappingLens,
         cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,
@@ -109,7 +112,7 @@ mod registro_de_pagos_club_sem_rust {
                 mapping_lens:MappingLens{
                     socios:0,
                     actividades:0,
-                    categorias:0, },
+                 },
                 cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento,
                 porcentaje_de_descuento_por_bonificacion,
                 FECHA_DE_HOY_DESPUES_BORRAR:FechaTemporalDespuesBorrar { mes: 0 },
@@ -134,7 +137,6 @@ mod registro_de_pagos_club_sem_rust {
                 TipoId::Pago => {return (self.pagos.get_or_default().len()+1) as u32},
                 TipoId::Socio => {self.mapping_lens.socios +=1; return self.mapping_lens.socios},
                 TipoId::Actividad => {self.mapping_lens.actividades +=1; return self.mapping_lens.actividades},
-                TipoId::Categoria => {self.mapping_lens.categorias +=1; return self.mapping_lens.categorias},
             }
         }
 
@@ -173,7 +175,7 @@ mod registro_de_pagos_club_sem_rust {
 
             let cumple_las_condiciones_para_obtener_la_bonificacion = self.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id);
 
-            let mut monto_cuota=self.categorias.get(self.socios.get(socio_id).unwrap().categoria_id).unwrap().costo_mensual_en_tokens;
+            let mut monto_cuota=self.categorias.get::<u32>(self.socios.get(socio_id).unwrap().categoria.discriminant()).unwrap().costo_mensual_en_tokens;
             if cumple_las_condiciones_para_obtener_la_bonificacion {monto_cuota -= monto_cuota*self.porcentaje_de_descuento_por_bonificacion}
 
             let cuota=Pago{id:self.nueva_id(TipoId::Pago),socio_id,fecha_de_pago:None,
@@ -266,12 +268,12 @@ mod registro_de_pagos_club_sem_rust {
         }
 
         #[ink(message)]
-        pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria_id:u32) -> bool{
+        pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> bool{
             if !self.tiene_permiso() {return false;}
-            if !self.categorias.contains(categoria_id) {return false;}
+            if !self.categorias.contains(categoria.discriminant()) {return false;}
 
             let info_personal_del_socio=DatosPersonalesSocio{nombre,apellido,dni:dni.clone()};
-            let socio=Socio{id:self.nueva_id(TipoId::Socio),categoria_id,datos_personales:info_personal_del_socio};
+            let socio=Socio{id:self.nueva_id(TipoId::Socio),categoria,datos_personales:info_personal_del_socio};
             self.socios.insert(socio.id, &socio);
 
             return self.crear_cuota_para_socio(socio.id, FechaTemporalDespuesBorrar {mes:0}
@@ -347,7 +349,13 @@ mod registro_de_pagos_club_sem_rust {
         pub fn get_pagos(&self) -> Vec<Pago>{
             self.pagos.get_or_default()
         }
+        
+        #[ink(message)]
+        pub fn get_categoria_data(&self,categoria:Categoria) -> DatosCategoria{
+            self.categorias.get(categoria.discriminant()).unwrap().clone() // SI O SI, SI EXISTE LA CATEGORIA TENDRIA Q EXISTIR SU DATA. HACERLO EN EL CONSTRUCTOR? SINO DEVOLVER UN OPTION Y LISTO. TERMINAR
+        }
 
+        #[ink(message)]
         pub fn categoria_de(&self,socio_id:u32)->u32{0} // CONSULTAR: ESTO ESTA BIEN? ESTAS ACCEDIENDO A LA PRIVACIDAD DEL SOCIO PARA OBTENER SUS DATOS
 
     }

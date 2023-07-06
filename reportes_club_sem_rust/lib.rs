@@ -2,15 +2,14 @@
 
 /* en cargo.toml tiene que ir:
 
-registro_de_pagos_club_sem_rust = { path = "Rust_Tp_Final/registro_de_pagos_club_sem_rust" /* COMO SE PONE EL PATH??? */, default-features = false, features = ["ink-as-dependency"] }
-
+registro_de_pagos_club_sem_rust = { path = "registro_de_pagos_club_sem_rust" /* COMO SE PONE EL PATH??? */, default-features = false, features = ["ink-as-dependency"] }
 
 std = [
     "ink/std",
     
     //COSAS
     
-    "Rust_Tp_Final/registro_de_pagos_club_sem_rust/std", //ACA VA EL PATH O QUE COSA? QUE ES STD
+    "registro_de_pagos_club_sem_rust/std", //ACA VA EL PATH O QUE COSA? QUE ES STD
 ]
 
  */
@@ -86,7 +85,7 @@ mod reportes_club_sem_rust {
         }
 
         #[ink(message)]
-        // CONSULTA: ¿el informe es del mes anterior o de todos los meses de los que se tiene registro?
+        // CONSULTA: ¿el informe es del mes anterior o de todos los meses de los que se tiene registro? // UN SOLO MES
         /// Se realiza un Vec de platita de cada categoria de cada mes
         pub fn informe_recaudacion_mensual(&self) ->  Vec<Vec<u128>>{
             let cant_meses = 15; // CONSULTA: COMO SABEMOS LA CANT DE MESES???
@@ -102,13 +101,30 @@ mod reportes_club_sem_rust {
 
         #[ink(message)]
         /// Dado un ID_actividad, retorna un listado de IDs de socios no morosos, cuyo plan les permita la asistencia a la actividad dada
-        pub fn informe_no_morosos_de_actividad(&self, ID_actividad: u32) -> Vec<u32> {
-            //self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago.is_some() &&
-            //     p.socio_id )
-            //.map(|p|p.id).collect()
-            Vec::new() // REPLANTEAR LO DE CATEGORIA PARA LA CATEGORIA B
+        pub fn informe_no_morosos_de_actividad(&self, id_actividad: u32) -> Vec<u32> {
+            self.club_sem_rust.get_pagos().iter().filter(|p|
+                p.fecha_de_pago.is_some() && self.socio_tiene_permitida_la_asistencia_a(p.socio_id,id_actividad))
+                .map(|p|p.id).collect()
         } 
         
+        fn socio_tiene_permitida_la_asistencia_a(&self, socio_id:u32,id_actividad:u32)->bool{ // CONSULTAR: medio feo quedo. Esta bien asi? 
+            /*
+            let categoria = self.club_sem_rust.socios.get(socio_id).categoria.clone();
+
+            let mut id_deporte_seleccionado_por_el_usuario_ES = false;
+            match categoria{
+                ClubSemRustRef::Categoria::B{id_deporte_seleccionado_por_el_usuario} => {id_deporte_seleccionado_por_el_usuario_ES= id_deporte_seleccionado_por_el_usuario == id_actividad}
+                _ => {}
+            }
+            if id_deporte_seleccionado_por_el_usuario_ES {return id_deporte_seleccionado_por_el_usuario_ES}
+
+            let cant = self.club_sem_rust.get_categoria(categoria).id_de_actividades_accesibles_base.iter().filter(|a|a == id_actividad.discriminant()).count(); // obtengo la cantidad de actividades que se coincidan con la actividad que viene como parametro
+            return cant>0; // o es 0 o es 1 (supuestamente)
+            
+            */
+            true
+        }
+
     }
 
 
