@@ -9,21 +9,26 @@ mod registro_de_pagos_club_sem_rust {
     use ink::prelude::string::String;
     use ink::storage::Lazy;
 
+
+    /// Voy a llorar del asco que me da hacer "Cantidad". Pido disculpas por los malestares emocionales que esto pueda llegar a crear
+    /// "Cantidad"  puede dar errores
+    /// MODIFICAR. TERMINAR. PEDIR DISCULPAS 
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum Categoria{ 
         A,
         B{id_deporte_seleccionado_por_el_usuario:u32},
-        C
+        C,
+        Cantidad, 
     }
     impl Categoria {
         fn discriminant(&self) -> u32 {
             unsafe { *(self as *const Self as *const u32) }
         }
     }
-    #[derive(scale::Decode, scale::Encode,Debug)]
+    #[derive(scale::Decode, scale::Encode,Debug,Clone)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub enum Actividades{
+    pub enum Actividad{
         Futbol,
         Gimnasio,
         Basquet,
@@ -35,26 +40,42 @@ mod registro_de_pagos_club_sem_rust {
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct DatosPersonalesSocio{
+    struct DatosPersonalesSocio{
         nombre:String,
         apellido:String,
         dni:u32
     }
+
+    /// DOCUMENTAR. TERMINAR
+    /// 
+    /// 
+    /// 
+    /// 
+    /// 
+    /// 
     #[derive(scale::Decode, scale::Encode,Debug,Clone)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct DatosCategoria{
         id:u32, // el id es el enum convertido en u32
         nombre:String,
         costo_mensual_en_tokens:u32,
-        id_de_actividades_accesibles_base: Vec<u32>,
+        actividades_accesibles_base: Vec<Actividad>, // CONSULTAR: No se puede HashSet?. // the trait `TypeInfo` is not implemented for `HashSet<Actividad>` // the trait bound `Mapping<Actividad, Actividad>: WrapperTypeDecode` is not satisfied
     }
+
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct Socio{
+    struct Socio{
         id:u32,
         categoria:Categoria,
         datos_personales:DatosPersonalesSocio
     }
+
+    /// DOCUMENTAR. TERMINAR
+    /// 
+    /// 
+    /// 
+    /// 
+    /// 
     #[derive(scale::Decode, scale::Encode,Debug,Clone)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct Pago{
@@ -73,14 +94,13 @@ mod registro_de_pagos_club_sem_rust {
         
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub enum TipoId{
-        Socio, Actividad, Pago,
+    enum TipoId{
+        Socio, Pago,
     }
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct MappingLens{
+    struct MappingLens{
         socios:u32,
-        actividades:u32,
     }
 
     #[ink(storage)]
@@ -88,8 +108,7 @@ mod registro_de_pagos_club_sem_rust {
         FINALBOSSAccountID:AccountId,
         editores:Mapping<AccountId,AccountId>,
         socios:Mapping<u32,Socio>,
-        actividades:Mapping<u32,Actividades>,
-        categorias:Mapping<u32,DatosCategoria>,
+        categorias_data:Mapping<u32,DatosCategoria>,
         pagos:Lazy<Vec<Pago>>, // CONSULTAR 
         mapping_lens:MappingLens,
         cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,
@@ -106,12 +125,10 @@ mod registro_de_pagos_club_sem_rust {
             let mut csr = Self{FINALBOSSAccountID,
                 editores:Mapping::new(),
                 socios:Mapping::new(),
-                actividades:Mapping::new(),
-                categorias:Mapping::new(),
+                categorias_data:Mapping::new(),
                 pagos:Lazy::default(),
                 mapping_lens:MappingLens{
                     socios:0,
-                    actividades:0,
                  },
                 cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento,
                 porcentaje_de_descuento_por_bonificacion,
@@ -136,7 +153,6 @@ mod registro_de_pagos_club_sem_rust {
             match tipo_id{
                 TipoId::Pago => {return (self.pagos.get_or_default().len()+1) as u32},
                 TipoId::Socio => {self.mapping_lens.socios +=1; return self.mapping_lens.socios},
-                TipoId::Actividad => {self.mapping_lens.actividades +=1; return self.mapping_lens.actividades},
             }
         }
 
@@ -175,7 +191,7 @@ mod registro_de_pagos_club_sem_rust {
 
             let cumple_las_condiciones_para_obtener_la_bonificacion = self.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id);
 
-            let mut monto_cuota=self.categorias.get::<u32>(self.socios.get(socio_id).unwrap().categoria.discriminant()).unwrap().costo_mensual_en_tokens;
+            let mut monto_cuota=self.categorias_data.get::<u32>(self.socios.get(socio_id).unwrap().categoria.discriminant()).unwrap().costo_mensual_en_tokens;
             if cumple_las_condiciones_para_obtener_la_bonificacion {monto_cuota -= monto_cuota*self.porcentaje_de_descuento_por_bonificacion}
 
             let cuota=Pago{id:self.nueva_id(TipoId::Pago),socio_id,fecha_de_pago:None,
@@ -233,24 +249,28 @@ mod registro_de_pagos_club_sem_rust {
 
         // ----------- Setters 
 
+        /// Dado un AccountId lo setea como nuevo duenio del Club
         #[ink(message)]
-        pub fn set_FINALBOSS (&mut self, nuevo_FINALBOSSAccountID:AccountId) -> bool{
+        pub fn set_FINALBOSS (&mut self, nuevo_FINALBOSSAccountID:AccountId) -> bool{ //TERMINAR. Devolver Result
             if self.es_FINALBOSS(){
                 self.FINALBOSSAccountID = nuevo_FINALBOSSAccountID; 
                 return true;
             }
             false
         }
+        /// Dado un AccountId lo agrega a la lista de editores autorizados 
         #[ink(message)]
-        pub fn autorizar_editor (&mut self, nuevo_editor:AccountId) -> bool{
+        pub fn autorizar_editor (&mut self, nuevo_editor:AccountId) -> bool{ //TERMINAR. Devolver Result
             if self.es_FINALBOSS(){
                 self.editores.insert(nuevo_editor.clone(),&nuevo_editor); 
                 return true;
             }
             false
         }
+
+        /// Dado un AccountId lo elimina de la lista de editores autorizados 
         #[ink(message)]
-        pub fn desautorizar_editor (&mut self, editor:AccountId) -> bool{
+        pub fn desautorizar_editor (&mut self, editor:AccountId) -> bool{ //TERMINAR. Devolver Result
             if self.es_FINALBOSS(){
                 self.editores.remove(editor);
                 return true;
@@ -259,7 +279,7 @@ mod registro_de_pagos_club_sem_rust {
         }
 
         #[ink(message)]
-        pub fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(&mut self,cant:u32) -> bool{
+        pub fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(&mut self,cant:u32) -> bool{  //TERMINAR. Devolver Result
             if !self.tiene_permiso() {return false;}
 
             self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento=cant;
@@ -268,9 +288,9 @@ mod registro_de_pagos_club_sem_rust {
         }
 
         #[ink(message)]
-        pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> bool{
+        pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> bool{ //TERMINAR. Devolver Result
             if !self.tiene_permiso() {return false;}
-            if !self.categorias.contains(categoria.discriminant()) {return false;}
+            if !self.categorias_data.contains(categoria.discriminant()) {return false;}
 
             let info_personal_del_socio=DatosPersonalesSocio{nombre,apellido,dni:dni.clone()};
             let socio=Socio{id:self.nueva_id(TipoId::Socio),categoria,datos_personales:info_personal_del_socio};
@@ -282,14 +302,8 @@ mod registro_de_pagos_club_sem_rust {
         }
 
         #[ink(message)]
-        pub fn actualizacion_mensual(&mut self) -> bool{ // si no se actualiza por varios meses pero SI se crean socios,
-                                                        // hay un problema: se le van a agregar cuotas a pagar a los socios nuevos
-                                                        // con fecha ANTERIOR a la fecha en la que esos socios se hayan registrado.
-                                                        // Una posibilidad es hacer lo que dijo el prof: que este metodo tmb sea llamado
-                                                        // cada vez que se realiza un pago, pero si no se realizan pagos x un tiempo,
-                                                        // estamos en la misma. Otra solucion que si funcionaria es agregar el campo
-                                                        // "fecha_de_registro" a los socios, y cuando se agrega un socio se setea como
-                                                        // la fecha actual. Eso funcionaria y solo cambiaria un poco la logica de este metodo // CONSULTAR
+        /// 
+        pub fn actualizacion_mensual(&mut self) -> bool{ //TERMINAR. Devolver Result
             if !self.tiene_permiso() {return false;}
             let meses_desde_la_ultima_actualizacion = self.FECHA_DE_HOY_DESPUES_BORRAR.mes - self.fecha_de_la_ultima_actualizacion.mes;
             if !(meses_desde_la_ultima_actualizacion>0) {return false;}
@@ -306,7 +320,9 @@ mod registro_de_pagos_club_sem_rust {
         }
 
         #[ink(message)]
-        pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> bool{
+        pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> bool{ //TERMINAR. Devolver Result
+            self.actualizacion_mensual();
+
             if !self.tiene_permiso() {return false;}
             let Some(socio) = self.get_socio_dni(dni_socio) else {return false;};
             
@@ -322,6 +338,7 @@ mod registro_de_pagos_club_sem_rust {
 
         // ----------- Getters
 
+        /// Devuelve true si quien llama a este metodo es el duenio del Club, false en caso contrario
         #[ink(message)]
         pub fn soy_FINNALBOSS(&self) -> bool{
             self.es_FINALBOSS()
@@ -349,16 +366,33 @@ mod registro_de_pagos_club_sem_rust {
         pub fn get_pagos(&self) -> Vec<Pago>{
             self.pagos.get_or_default()
         }
+        #[ink(message)]
+        pub fn get_pagos_del_mes(&self,fecha:FechaTemporalDespuesBorrar) -> Vec<Pago>{
+            self.pagos.get_or_default().into_iter().filter(|p|p.fecha_de_vencimiento.mes == fecha.mes).collect()
+        }
         
         #[ink(message)]
-        pub fn get_categoria_data(&self,categoria:Categoria) -> DatosCategoria{
-            self.categorias.get(categoria.discriminant()).unwrap().clone() // SI O SI, SI EXISTE LA CATEGORIA TENDRIA Q EXISTIR SU DATA. HACERLO EN EL CONSTRUCTOR? SINO DEVOLVER UN OPTION Y LISTO. TERMINAR
+        pub fn get_categoria_data(&self,categoria:Categoria) -> DatosCategoria{ 
+            self.categorias_data.get(categoria.discriminant()).unwrap().clone() // CONSULTAR: SI O SI, SI EXISTE LA CATEGORIA TENDRIA Q EXISTIR SU DATA. HACERLO EN EL CONSTRUCTOR? SINO DEVOLVER UN OPTION Y LISTO. TERMINAR
         }
 
         #[ink(message)]
-        pub fn categoria_de(&self,socio_id:u32)->u32{0} // CONSULTAR: ESTO ESTA BIEN? ESTAS ACCEDIENDO A LA PRIVACIDAD DEL SOCIO PARA OBTENER SUS DATOS
+        pub fn categoria_de(&self,socio_id:u32)->Option<u32>{ // CONSULTAR: ESTO ESTA BIEN? ESTAS ACCEDIENDO A LA PRIVACIDAD DEL SOCIO PARA OBTENER SUS DATOS
+            if let Some(socio) = self.socios.get(socio_id){
+                return Some(socio.categoria.discriminant())
+            }
+            None
+        } 
+
+        #[ink(message)]
+        pub fn cant_categorias(&self) -> u32 {
+            //mem::variant_count::<Categoria>() as u32 // use std::mem;
+            Categoria::Cantidad.discriminant() as u32
+        }
+
 
     }
+    
 
     // CONSULTAS: 
         // 1- BOOOOOOOOOOOOOOL PORFAVORRRRRRRRRRRRR

@@ -37,7 +37,9 @@ mod reportes_club_sem_rust {
         pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32)->u32{0}
         pub fn consulta_de_pago(&self, dni_ingresado:Option<u32>)->Option<Vec<Pago>>{None}
         pub fn get_pagos(&self) -> Vec<Pago>{Vec::new()}
-        pub fn categoria_de(&self,socio_id:u32)->u32{0}
+        pub fn get_pagos_del_mes(&self,fecha:FechaTemporalDespuesBorrar) -> Vec<Pago>{Vec::new()}
+        pub fn categoria_de(&self,socio_id:u32)->u32{0} 
+        pub fn cant_categorias(&self) -> u32 {3}
     }
     #[derive(scale::Decode, scale::Encode,Debug,Clone)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -52,8 +54,12 @@ mod reportes_club_sem_rust {
     #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub struct FechaTemporalDespuesBorrar{
-        mes:u32
+        mes:u32,
+        anio:u32,
     }
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    pub enum Actividad{}
 
 
 
@@ -78,47 +84,45 @@ mod reportes_club_sem_rust {
             Self { club_sem_rust }
         }
 
+        /// Se realiza un Vec de id_de_usuarios agregando aquellos socios morosos del Club
         #[ink(message)]
-        /// Se realiza un Vec de id_de_usuarios agregando aquellos socios morosos del Vec<Pagos>
         pub fn verificacion_de_pagos_pendientes(&self) -> Vec<u32>{
             self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago.is_none()).map(|p|p.id).collect()
         }
 
+        /// Dado un mes, se realiza un Vec de la platita total recaudada de cada categoria
         #[ink(message)]
-        // CONSULTA: ¿el informe es del mes anterior o de todos los meses de los que se tiene registro? // UN SOLO MES
-        /// Se realiza un Vec de platita de cada categoria de cada mes
-        pub fn informe_recaudacion_mensual(&self) ->  Vec<Vec<u128>>{
-            let cant_meses = 15; // CONSULTA: COMO SABEMOS LA CANT DE MESES???
-            let cant_categorias = 5; // CONSULTA: COMO SABEMOS LA CANT DE categorias???
-            let mut monto_categorias_mensual = vec![vec![0;cant_meses];cant_categorias];
+        pub fn informe_recaudacion_mensual(&self, fecha:FechaTemporalDespuesBorrar) ->  Vec<u128>{ // MODIFICAR. TERMINAR. No recibir la fecha, recibir el anio y el mes y chequear que sean validos
+            let cant_categorias = self.club_sem_rust.cant_categorias();
+            let mut monto_categorias_mensual = vec![0;cant_categorias as usize];
             
-            self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago.is_some())
+            self.club_sem_rust.get_pagos_del_mes(fecha).iter().filter(|p|p.fecha_de_pago.is_some())
             .for_each(|p|
-                monto_categorias_mensual[self.club_sem_rust.categoria_de(p.socio_id) as usize][p.fecha_de_pago.clone().unwrap().mes as usize]+=p.monto
+                monto_categorias_mensual[(self.club_sem_rust.categoria_de(p.socio_id)) as usize]+=p.monto
             );
             monto_categorias_mensual
         }
 
-        #[ink(message)]
         /// Dado un ID_actividad, retorna un listado de IDs de socios no morosos, cuyo plan les permita la asistencia a la actividad dada
-        pub fn informe_no_morosos_de_actividad(&self, id_actividad: u32) -> Vec<u32> {
+        #[ink(message)]
+        pub fn informe_no_morosos_de_actividad(&self, actividad: Actividad) -> Vec<u32> {
             self.club_sem_rust.get_pagos().iter().filter(|p|
-                p.fecha_de_pago.is_some() && self.socio_tiene_permitida_la_asistencia_a(p.socio_id,id_actividad))
+                p.fecha_de_pago.is_some() && self.socio_tiene_permitida_la_asistencia_a(p.socio_id,actividad.clone()))
                 .map(|p|p.id).collect()
         } 
         
-        fn socio_tiene_permitida_la_asistencia_a(&self, socio_id:u32,id_actividad:u32)->bool{ // CONSULTAR: medio feo quedo. Esta bien asi? 
+        fn socio_tiene_permitida_la_asistencia_a(&self, socio_id:u32,actividad:Actividad)->bool{ // CONSULTAR: medio feo quedo. Esta bien asi? 
             /*
             let categoria = self.club_sem_rust.socios.get(socio_id).categoria.clone();
 
             let mut id_deporte_seleccionado_por_el_usuario_ES = false;
             match categoria{
-                ClubSemRustRef::Categoria::B{id_deporte_seleccionado_por_el_usuario} => {id_deporte_seleccionado_por_el_usuario_ES= id_deporte_seleccionado_por_el_usuario == id_actividad}
+                ClubSemRustRef::Categoria::B{id_deporte_seleccionado_por_el_usuario} => {id_deporte_seleccionado_por_el_usuario_ES= id_deporte_seleccionado_por_el_usuario == actividad.discriminant()}
                 _ => {}
             }
             if id_deporte_seleccionado_por_el_usuario_ES {return id_deporte_seleccionado_por_el_usuario_ES}
 
-            let cant = self.club_sem_rust.get_categoria(categoria).id_de_actividades_accesibles_base.iter().filter(|a|a == id_actividad.discriminant()).count(); // obtengo la cantidad de actividades que se coincidan con la actividad que viene como parametro
+            let cant = self.club_sem_rust.get_categoria_data(categoria).id_de_actividades_accesibles_base.iter().find(|a|a == actividad.discriminant());
             return cant>0; // o es 0 o es 1 (supuestamente)
             
             */
