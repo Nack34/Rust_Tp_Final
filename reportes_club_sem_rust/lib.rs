@@ -122,8 +122,8 @@ mod reportes_club_sem_rust {
             }
             if id_deporte_seleccionado_por_el_usuario_ES {return id_deporte_seleccionado_por_el_usuario_ES}
 
-            let cant = self.club_sem_rust.get_categoria_data(categoria).id_de_actividades_accesibles_base.iter().find(|a|a == actividad.discriminant());
-            return cant>0; // o es 0 o es 1 (supuestamente)
+            let res = self.club_sem_rust.get_categoria_data(categoria).id_de_actividades_accesibles_base.iter().find(|a|a == actividad.discriminant());
+            return res.is_some();
             
             */
             true
