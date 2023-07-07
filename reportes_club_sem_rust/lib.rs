@@ -66,12 +66,6 @@ mod reportes_club_sem_rust {
     // VOLAR TODO LO DE ARRIBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 
-/* 
-
-
- */
-
-
     
     #[ink(storage)]
     pub struct ReportesClubSemRust {

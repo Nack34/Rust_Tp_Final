@@ -9,7 +9,7 @@ mod registro_de_pagos_club_sem_rust {
     use ink::prelude::string::String;
     use ink::storage::Lazy;
 
-
+    
     /// Voy a llorar del asco que me da hacer "Cantidad". Pido disculpas por los malestares emocionales que esto pueda llegar a crear
     /// "Cantidad"  puede dar errores
     /// MODIFICAR. TERMINAR. PEDIR DISCULPAS 
@@ -105,6 +105,7 @@ mod registro_de_pagos_club_sem_rust {
 
     #[ink(storage)]
     pub struct ClubSemRust {
+        politica_de_autorizacion_activada:bool,
         FINALBOSSAccountID:AccountId,
         editores:Mapping<AccountId,AccountId>,
         socios:Mapping<u32,Socio>,
@@ -122,14 +123,16 @@ mod registro_de_pagos_club_sem_rust {
         pub fn new(FINALBOSSAccountID:AccountId, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,mut porcentaje_de_descuento_por_bonificacion:u32)->Self{
             if porcentaje_de_descuento_por_bonificacion > 99 {porcentaje_de_descuento_por_bonificacion = 0} 
             
-            let mut csr = Self{FINALBOSSAccountID,
+            let mut csr = Self{
+                politica_de_autorizacion_activada:true,
+                FINALBOSSAccountID,
                 editores:Mapping::new(),
                 socios:Mapping::new(),
                 categorias_data:Mapping::new(),
                 pagos:Lazy::default(),
                 mapping_lens:MappingLens{
                     socios:0,
-                 },
+                },
                 cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento,
                 porcentaje_de_descuento_por_bonificacion,
                 FECHA_DE_HOY_DESPUES_BORRAR:FechaTemporalDespuesBorrar { mes: 0 },
@@ -140,8 +143,9 @@ mod registro_de_pagos_club_sem_rust {
         }
 
         // ----------- Metodos privados
+        
         fn tiene_permiso(&self) -> bool{
-            self.es_FINALBOSS() || self.es_editor()
+            self.politica_de_autorizacion_activada || self.es_FINALBOSS() || self.es_editor()
         }
         fn es_FINALBOSS (&self) -> bool{
             self.FINALBOSSAccountID == self.env().caller()
@@ -149,6 +153,8 @@ mod registro_de_pagos_club_sem_rust {
         fn es_editor (&self) -> bool{
             self.editores.contains(self.env().caller())
         }
+
+
         fn nueva_id (&mut self,tipo_id:TipoId) -> u32{
             match tipo_id{
                 TipoId::Pago => {return (self.pagos.get_or_default().len()+1) as u32},
@@ -185,9 +191,9 @@ mod registro_de_pagos_club_sem_rust {
             }
             false
         }
-        fn crear_cuota_para_socio(&mut self, socio_id:u32,fecha_de_vencimiento:FechaTemporalDespuesBorrar) -> bool{
-            if !self.socios.contains(socio_id) {return false}
-            if fecha_de_vencimiento.mes>self.FECHA_DE_HOY_DESPUES_BORRAR.mes+1 {return false}
+        fn crear_cuota_para_socio(&mut self, socio_id:u32,fecha_de_vencimiento:FechaTemporalDespuesBorrar) -> Result<String,String>{
+            if !self.socios.contains(socio_id) {return Err("el socio no posee los permisos para realizar esta operacion".to_string())}
+            if fecha_de_vencimiento.mes>self.FECHA_DE_HOY_DESPUES_BORRAR.mes+1 {return Err(" la fecha de vencimiento recibida por parametro es invalida".to_string())}
 
             let cumple_las_condiciones_para_obtener_la_bonificacion = self.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id);
 
@@ -202,7 +208,7 @@ mod registro_de_pagos_club_sem_rust {
             let mut pagos = self.pagos.get_or_default();
             pagos.push(cuota);
             self.pagos.set(&pagos);
-            true
+            Ok("se realizo la operacion exitosamente".to_string())
         }
 
         fn get_socio_dni(&self, un_dni:u32)->Option<Socio>{
@@ -249,16 +255,18 @@ mod registro_de_pagos_club_sem_rust {
 
         // ----------- Setters 
 
-        /// Dado un AccountId lo setea como nuevo duenio del Club
+        /// Dado un AccountId, lo setea como nuevo duenio del Club
+        /// Posibles result:
         #[ink(message)]
-        pub fn set_FINALBOSS (&mut self, nuevo_FINALBOSSAccountID:AccountId) -> bool{ //TERMINAR. Devolver Result
+        pub fn set_FINALBOSS (&mut self, nuevo_FINALBOSSAccountID:AccountId) -> Result<String,String>{ //TERMINAR. Devolver Result
             if self.es_FINALBOSS(){
                 self.FINALBOSSAccountID = nuevo_FINALBOSSAccountID; 
-                return true;
+                return Ok("la reasignacion del id del dueño se realizo exitosamente".to_string());
             }
-            false
+            Err("solo el dueño es capaz de reasignar su id, usted no posee los permisos".to_string())
         }
-        /// Dado un AccountId lo agrega a la lista de editores autorizados 
+        /// Dado un AccountId, lo agrega a la lista de editores autorizados 
+        /// Posibles result:
         #[ink(message)]
         pub fn autorizar_editor (&mut self, nuevo_editor:AccountId) -> bool{ //TERMINAR. Devolver Result
             if self.es_FINALBOSS(){
@@ -268,7 +276,8 @@ mod registro_de_pagos_club_sem_rust {
             false
         }
 
-        /// Dado un AccountId lo elimina de la lista de editores autorizados 
+        /// Dado un AccountId, lo elimina de la lista de editores autorizados 
+        /// Posibles result:
         #[ink(message)]
         pub fn desautorizar_editor (&mut self, editor:AccountId) -> bool{ //TERMINAR. Devolver Result
             if self.es_FINALBOSS(){
@@ -278,6 +287,8 @@ mod registro_de_pagos_club_sem_rust {
             false
         }
 
+        /// Dada una cantidad, la setea como nueva cantidad de pagos consecutivos sin atrasos necesarios para descuento
+        /// Posibles result:
         #[ink(message)]
         pub fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(&mut self,cant:u32) -> bool{  //TERMINAR. Devolver Result
             if !self.tiene_permiso() {return false;}
@@ -287,6 +298,8 @@ mod registro_de_pagos_club_sem_rust {
             true
         }
 
+        /// Dados un nombre, apellido, dni y una categoria, registra un nuevo socio y le crea una primer cuota a vencer dentro de 10 dias
+        /// Posibles result:
         #[ink(message)]
         pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> bool{ //TERMINAR. Devolver Result
             if !self.tiene_permiso() {return false;}
@@ -301,24 +314,26 @@ mod registro_de_pagos_club_sem_rust {
                                         // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
         }
 
+        /// Crea una cuota a vencer el dia 10 del mes actual para todos los usuarios
+        /// Este metodo se puede llamar manualmente, y ademas se llama cada vez que se quiere realizar un pago
+        /// Este metodo se ejecutara como mucho una vez por mes. De ser llamado mas veces devolvera un Result
+        /// Posibles result:
         #[ink(message)]
-        /// 
         pub fn actualizacion_mensual(&mut self) -> bool{ //TERMINAR. Devolver Result
             if !self.tiene_permiso() {return false;}
             let meses_desde_la_ultima_actualizacion = self.FECHA_DE_HOY_DESPUES_BORRAR.mes - self.fecha_de_la_ultima_actualizacion.mes;
             if !(meses_desde_la_ultima_actualizacion>0) {return false;}
 
-            for mes in self.fecha_de_la_ultima_actualizacion.mes+1..self.FECHA_DE_HOY_DESPUES_BORRAR.mes+1 { // el ultimo mes registrado no quiero repetirlo y el mes actual si quiero registrarlo 
-                for i in 1..self.mapping_lens.socios+1 {
-                    self.crear_cuota_para_socio(i, FechaTemporalDespuesBorrar {mes}
-                                            /* datetime::LocalDateTime::mes().add_seconds(604800)*/); 
-                                        // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
-                }
+            for i in 1..self.mapping_lens.socios+1 {
+                self.crear_cuota_para_socio(i, FechaTemporalDespuesBorrar {mes: self.FECHA_DE_HOY_DESPUES_BORRAR.mes}
+                                        /* datetime::LocalDateTime::mes_y_anio_actual_dia_10()*/); 
             }
             self.fecha_de_la_ultima_actualizacion = self.FECHA_DE_HOY_DESPUES_BORRAR.clone();
             true
         }
 
+        /// Dados un dni y un monto, marca como pagado el pago sin pagar mas viejo
+        /// Posibles result:
         #[ink(message)]
         pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> bool{ //TERMINAR. Devolver Result
             self.actualizacion_mensual();
@@ -330,11 +345,29 @@ mod registro_de_pagos_club_sem_rust {
             if !(pago.monto == monto as u128) {return false;};
 
             self.marcar_pago_pagado(pago.id)
-
-            // CONSULTA: Tomamos como que el monto entrante ya le fue descontado al socio? Que pasa si no tiene deuda o si el monto es mayor? Pierde
-            // plata? NO SABEMOSSSSSSSSSSSSSSSSS
-            
         }
+
+        /// Si quien llama es el duenio, activa la politica de autorizacion. Por lo cual solo los AccountId autorizados pueden editar 
+        #[ink(message)]
+        pub fn activar_politica_de_autorizacion (&mut self) -> bool{ //TERMINAR. Devolver Result
+            if self.es_FINALBOSS(){
+                self.politica_de_autorizacion_activada=true;
+                return true;
+            }
+            false
+        }
+        /// Si quien llama es el duenio, desactiva la politica de autorizacion. Por lo cual cualquien AccountId puede editar 
+        #[ink(message)]
+        pub fn desactivar_politica_de_autorizacion (&mut self) -> bool{ //TERMINAR. Devolver Result
+            if self.es_FINALBOSS(){
+                self.politica_de_autorizacion_activada=false;
+                return true;
+            }
+            false
+        }
+
+
+
 
         // ----------- Getters
 
@@ -343,18 +376,23 @@ mod registro_de_pagos_club_sem_rust {
         pub fn soy_FINNALBOSS(&self) -> bool{
             self.es_FINALBOSS()
         }
+        /// Devuelve true si quien llama a este metodo tiene permisos para editar los datos del CLub, false en caso contrario
         #[ink(message)]
         pub fn puedo_editar(&self) -> bool{
             self.tiene_permiso()
         }
 
+        /// Devuelve la cantidad de pagos consecutivos sin atrasos necesarios para descuento
         #[ink(message)]
-        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32)->u32{
+        pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self)->u32{
             self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento
         }
 
+        /// Dado un dni se listan sus pagos, mostrando la informacion del socio, la categoria y el monto pagado
+        /// Si se ingresa None, de listaran todos los pagos organizados por usuarios
+        /// MODIFICAR: No cumplimos con la consigna, tenemos que devolver otro struct (anonimo?), en el que se guarde la información del socio, la categoría y el monto pagado. Actualmente devolvemos el struct Pago, lo cual esta MAL
         #[ink(message)]
-        pub fn consulta_de_pago(&self, dni_ingresado:Option<u32>)->Option<Vec<Pago>>{ 
+        pub fn consulta_de_pago(&self, dni_ingresado:Option<u32>)->Option<Vec<Pago>>{ //TERMINAR. Devolver Result (cuando devuelve None tendria que ser Err, cuando devuelve Some, tendria que ser Ok)
             if !self.tiene_permiso() {return None;}
             let Some(dni_ingresado) = dni_ingresado else {return Some(self.SLICE_O_PAGINACION_QUE_ES_ESO(self.pagos.get_or_default())); }; //CONSULTA: tambien podria ser self.pagos.get();
             let Some(socio) = self.get_socio_dni(dni_ingresado) else {return None;};
@@ -394,16 +432,19 @@ mod registro_de_pagos_club_sem_rust {
     }
     
 
-    // CONSULTAS: 
-        // 1- BOOOOOOOOOOOOOOL PORFAVORRRRRRRRRRRRR
-        // 2- Metodo actualizacion_mensual
-        // 3- Fecha? Que hacemos? "the trait bound `LocalDateTime: TypeInfo` is not satisfied"
-        // 4- Metodo registrar_nuevo_pago
-    
+    // CONSULTAR: 
+        // 1- BOOOOOOOOOOOOOOL PORFAVORRRRRRRRRRRRR => No
+        // 2- Fecha? Que hacemos? "the trait bound `LocalDateTime: TypeInfo` is not satisfied" => Probar con date_time
+
+    // TERMINAR:
+
+
+
     /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
     /// module and test functions are marked with a `#[test]` attribute.
     /// The below code is technically just normal Rust code.
     #[cfg(test)]
     mod tests {
+        
     }
 }
