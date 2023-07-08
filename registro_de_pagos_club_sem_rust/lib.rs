@@ -2,9 +2,9 @@
 pub use registro_de_pagos_club_sem_rust::ClubSemRustRef; // CONSULTA: POR QUE NO TODO EL NOMBRE?
 #[ink::contract]
 mod registro_de_pagos_club_sem_rust {
-    use core::iter;
 
     use datetime::LocalDateTime;
+
     use ink::storage::Mapping;
     use ink::prelude::string::String;
     use ink::storage::Lazy;
@@ -81,15 +81,10 @@ mod registro_de_pagos_club_sem_rust {
     pub struct Pago{
         id:u32,
         socio_id: u32,
-        fecha_de_pago:Option<FechaTemporalDespuesBorrar>, //Option<datetime::LocalDateTime>, //pa pregunta
-        fecha_de_vencimiento:FechaTemporalDespuesBorrar, //datetime::LocalDateTime,
+        fecha_de_pago:Option<Timestamp>,
+        fecha_de_vencimiento:Timestamp,
         monto:u128,
         tiene_bonificacion:bool
-    }
-    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq)]
-    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct FechaTemporalDespuesBorrar{
-        mes:u32
     }
         
     #[derive(scale::Decode, scale::Encode,Debug)]
@@ -106,7 +101,7 @@ mod registro_de_pagos_club_sem_rust {
     #[ink(storage)]
     pub struct ClubSemRust {
         politica_de_autorizacion_activada:bool,
-        FINALBOSSAccountID:AccountId,
+        duenio_account_id:AccountId,
         editores:Mapping<AccountId,AccountId>,
         socios:Mapping<u32,Socio>,
         categorias_data:Mapping<u32,DatosCategoria>,
@@ -114,18 +109,18 @@ mod registro_de_pagos_club_sem_rust {
         mapping_lens:MappingLens,
         cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,
         porcentaje_de_descuento_por_bonificacion:u32,
-        FECHA_DE_HOY_DESPUES_BORRAR:FechaTemporalDespuesBorrar, // borrar, cambia por algun metodo de algun crate que te de la fecha actual
-        fecha_de_la_ultima_actualizacion:FechaTemporalDespuesBorrar // no borrar
+        fecha_de_la_ultima_actualizacion:Timestamp // no borrar
     }
 
     impl ClubSemRust {
         #[ink(constructor)]
-        pub fn new(FINALBOSSAccountID:AccountId, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,mut porcentaje_de_descuento_por_bonificacion:u32)->Self{
+        pub fn new(duenio_account_id:AccountId, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32,mut porcentaje_de_descuento_por_bonificacion:u32)->Self{
             if porcentaje_de_descuento_por_bonificacion > 99 {porcentaje_de_descuento_por_bonificacion = 0} 
             
+
             let mut csr = Self{
                 politica_de_autorizacion_activada:true,
-                FINALBOSSAccountID,
+                duenio_account_id,
                 editores:Mapping::new(),
                 socios:Mapping::new(),
                 categorias_data:Mapping::new(),
@@ -135,9 +130,9 @@ mod registro_de_pagos_club_sem_rust {
                 },
                 cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento,
                 porcentaje_de_descuento_por_bonificacion,
-                FECHA_DE_HOY_DESPUES_BORRAR:FechaTemporalDespuesBorrar { mes: 0 },
-                fecha_de_la_ultima_actualizacion:FechaTemporalDespuesBorrar { mes: 0 },
+                fecha_de_la_ultima_actualizacion:Timestamp::default(),
                 };
+            csr.fecha_de_la_ultima_actualizacion = csr.env().block_timestamp(); 
             csr.pagos.set(&Vec::new());
             csr
         }
@@ -145,15 +140,14 @@ mod registro_de_pagos_club_sem_rust {
         // ----------- Metodos privados
         
         fn tiene_permiso(&self) -> bool{
-            self.politica_de_autorizacion_activada || self.es_FINALBOSS() || self.es_editor()
+            self.politica_de_autorizacion_activada || self.es_duenio() || self.es_editor()
         }
-        fn es_FINALBOSS (&self) -> bool{
-            self.FINALBOSSAccountID == self.env().caller()
+        fn es_duenio (&self) -> bool{
+            self.duenio_account_id == self.env().caller()
         }
         fn es_editor (&self) -> bool{
             self.editores.contains(self.env().caller())
         }
-
 
         fn nueva_id (&mut self,tipo_id:TipoId) -> u32{
             match tipo_id{
@@ -187,10 +181,11 @@ mod registro_de_pagos_club_sem_rust {
         }
         fn pago_esta_vencido(&self,pago:&Pago) -> bool{
             if let Some(fecha_de_pago) = pago.fecha_de_pago.clone(){
-                return fecha_de_pago.mes < pago.fecha_de_vencimiento.mes // aca tiene que ser todo menor, pero en la fecha temporal solo implemente el mes
+                return LocalDateTime::at(fecha_de_pago as i64) < pago.fecha_de_vencimiento.mes // aca tiene que ser todo menor, pero en la fecha temporal solo implemente el mes
             }
             false
         }
+/*
         fn crear_cuota_para_socio(&mut self, socio_id:u32,fecha_de_vencimiento:FechaTemporalDespuesBorrar) -> Result<String,String>{
             if !self.socios.contains(socio_id) {return Err("el socio no posee los permisos para realizar esta operacion".to_string())}
             if fecha_de_vencimiento.mes>self.FECHA_DE_HOY_DESPUES_BORRAR.mes+1 {return Err(" la fecha de vencimiento recibida por parametro es invalida".to_string())}
@@ -258,9 +253,9 @@ mod registro_de_pagos_club_sem_rust {
         /// Dado un AccountId, lo setea como nuevo duenio del Club
         /// Posibles result:
         #[ink(message)]
-        pub fn set_FINALBOSS (&mut self, nuevo_FINALBOSSAccountID:AccountId) -> Result<String,String>{ //TERMINAR. Devolver Result
-            if self.es_FINALBOSS(){
-                self.FINALBOSSAccountID = nuevo_FINALBOSSAccountID; 
+        pub fn set_duenio (&mut self, nuevo__auenioAccount_id:AccountId) -> Result<String,String>{ //TERMINAR. Devolver Result
+            if self.es_duenio(){
+                self.duenio_account_id = nuevo__auenioAccount_id; 
                 return Ok("la reasignacion del id del dueño se realizo exitosamente".to_string());
             }
             Err("solo el dueño es capaz de reasignar su id, usted no posee los permisos".to_string())
@@ -269,7 +264,7 @@ mod registro_de_pagos_club_sem_rust {
         /// Posibles result:
         #[ink(message)]
         pub fn autorizar_editor (&mut self, nuevo_editor:AccountId) -> bool{ //TERMINAR. Devolver Result
-            if self.es_FINALBOSS(){
+            if self.es_duenio(){
                 self.editores.insert(nuevo_editor.clone(),&nuevo_editor); 
                 return true;
             }
@@ -280,7 +275,7 @@ mod registro_de_pagos_club_sem_rust {
         /// Posibles result:
         #[ink(message)]
         pub fn desautorizar_editor (&mut self, editor:AccountId) -> bool{ //TERMINAR. Devolver Result
-            if self.es_FINALBOSS(){
+            if self.es_duenio(){
                 self.editores.remove(editor);
                 return true;
             }
@@ -350,7 +345,7 @@ mod registro_de_pagos_club_sem_rust {
         /// Si quien llama es el duenio, activa la politica de autorizacion. Por lo cual solo los AccountId autorizados pueden editar 
         #[ink(message)]
         pub fn activar_politica_de_autorizacion (&mut self) -> bool{ //TERMINAR. Devolver Result
-            if self.es_FINALBOSS(){
+            if self.es_duenio(){
                 self.politica_de_autorizacion_activada=true;
                 return true;
             }
@@ -359,7 +354,7 @@ mod registro_de_pagos_club_sem_rust {
         /// Si quien llama es el duenio, desactiva la politica de autorizacion. Por lo cual cualquien AccountId puede editar 
         #[ink(message)]
         pub fn desactivar_politica_de_autorizacion (&mut self) -> bool{ //TERMINAR. Devolver Result
-            if self.es_FINALBOSS(){
+            if self.es_duenio(){
                 self.politica_de_autorizacion_activada=false;
                 return true;
             }
@@ -374,7 +369,7 @@ mod registro_de_pagos_club_sem_rust {
         /// Devuelve true si quien llama a este metodo es el duenio del Club, false en caso contrario
         #[ink(message)]
         pub fn soy_FINNALBOSS(&self) -> bool{
-            self.es_FINALBOSS()
+            self.es_duenio()
         }
         /// Devuelve true si quien llama a este metodo tiene permisos para editar los datos del CLub, false en caso contrario
         #[ink(message)]
@@ -421,7 +416,7 @@ mod registro_de_pagos_club_sem_rust {
             }
             None
         } 
-
+*/
         #[ink(message)]
         pub fn cant_categorias(&self) -> u32 {
             //mem::variant_count::<Categoria>() as u32 // use std::mem;
