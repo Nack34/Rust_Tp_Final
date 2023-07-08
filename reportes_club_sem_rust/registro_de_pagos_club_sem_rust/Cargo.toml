@@ -10,7 +10,6 @@ ink-analyzer-ir = "0.6.0"
 datetime = "0.5.2"
 scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
 scale-info = { version = "2.6", default-features = false, features = ["derive"], optional = true }
-date_time = "2.2.0"
 
 [dev-dependencies]
 ink_e2e = "4.2.0"
