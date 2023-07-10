@@ -1,19 +1,17 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 #[ink::contract]
 mod reportes_club_sem_rust {
-    use registro_de_pagos_club_sem_rust::ClubSemRustRef; // BORRAR LO DE ABAJO Y CAMBIARLO X ESTA LINEA D CODIGO
-    #[derive(scale::Decode, scale::Encode,Debug,Clone, PartialEq)]
-    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub enum Actividad{
-        Futbol,
-        Gimnasio,
-        Basquet,
-        Rugby,
-        Hockey,
-        Natacion,
-        Tenis,
-        Paddle
-    }
+    use registro_de_pagos_club_sem_rust::ClubSemRustRef;
+    
+    /// Los posibles tipos de errores all llamar a los metodos del contrato
+    #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub enum Error {
+        /// Devuelto si el Id de actividad ingresado no representa una actividad del Club.
+        ActividadInvalida,
+        /// Devuelto si el no todas las categorias del Club tienen data.
+        NoTodasLasCategoriasTienenData,
+    } 
     
     #[ink(storage)]
     pub struct ReportesClubSemRust {
@@ -32,32 +30,36 @@ mod reportes_club_sem_rust {
             self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago().is_none()).map(|p|p.id()).collect()
         }
 
-        /// Dado un mes, se realiza un Vec de la platita total recaudada de cada categoria
+        /// Dado un Timestamp, se realiza un Vec de la platita total recaudada de cada categoria en ese mes y anio
         #[ink(message)]
-        pub fn informe_recaudacion_mensual(&self, fecha:Timestamp) ->  Result<Vec<u128>,String>{ // MODIFICAR. TERMINAR. No recibir la fecha, recibir el anio y el mes y chequear que sean validos
+        pub fn informe_recaudacion_mensual(&self, mes_y_anio:Timestamp) ->  Vec<u128>{
             let cant_categorias = self.club_sem_rust.cant_categorias();
             let mut monto_categorias_mensual = vec![0;cant_categorias as usize];
             
-            self.club_sem_rust.get_pagos_del_mes(fecha).iter().filter(|p|p.fecha_de_pago().is_some())
+            self.club_sem_rust.get_pagos_del_mes_y_anio(mes_y_anio).iter().filter(|p|p.fecha_de_pago().is_some())
             .for_each(|p|{
-                let categoria = self.club_sem_rust.categoria_de(p.socio_id()).unwrap(); // CONSULTAR. CONFIRMAR: Para que el pago tenga el id_socio, al crear el pago el socio tiene que existir (por la manera en que se construye el pago)
+                let categoria = self.club_sem_rust.categoria_de(p.socio_id()).unwrap();
                 monto_categorias_mensual[categoria.discriminant() as usize]+=p.monto();
             
             });
-            Ok(monto_categorias_mensual)
+            monto_categorias_mensual
         }
 
         /// Dado un ID_actividad, retorna un listado de IDs de socios no morosos, cuyo plan les permita la asistencia a la actividad dada
-        /// ARREGLAR. CONSULTAR. TERMINAR
+        /// 
+        /// Posibles Error: ActividadInvalida, NoTodasLasCategoriasTienenData
         #[ink(message)]
-        pub fn informe_no_morosos_de_actividad(&self, id_actividad: u32) -> Vec<u32> {//ClubSemRustRef::Actividad) -> Vec<u32> {
-            self.club_sem_rust.get_pagos().iter().filter(|p|
-                p.fecha_de_pago().is_some() && self.club_sem_rust.socio_tiene_permitida_la_asistencia_a(p.socio_id(),id_actividad).unwrap()) // CONSULTAR. CONFIRMAR: Para que el pago tenga el id_socio, al crear el pago el socio tiene que existir (por la manera en que se construye el pago)
-                .map(|p|p.id()).collect()
+        pub fn informe_no_morosos_de_actividad(&self, id_actividad: u32) -> Result<Vec<u32>,Error> {
+            if !self.club_sem_rust.existe_actividad_id(id_actividad) {return Err(Error::ActividadInvalida)}
+            if !self.club_sem_rust.todas_las_categorias_tienen_sus_datas_cargadas() {return Err(Error::NoTodasLasCategoriasTienenData)}
+            
+            let mut res= self.club_sem_rust.get_pagos().iter().filter(|p|
+                p.fecha_de_pago().is_some() && self.club_sem_rust.socio_tiene_permitida_la_asistencia_a(p.socio_id(),id_actividad).unwrap()) 
+                .map(|p|p.id()).collect::<Vec<u32>>();
+            res.dedup();
+            Ok(res)
         } 
     
-        fn extra_despues_borrar(){/* es para saber si los warnings se ven o no*/}
-
     }
 
 
