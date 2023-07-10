@@ -462,28 +462,32 @@ mod registro_de_pagos_club_sem_rust {
                                         // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
         }
 
+        /// Es momento de otra actualizacion si en este mes no fue hecha otra actualizacion
         fn es_momento_de_otra_actualizacion(&self) -> bool{
-            LocalDateTime::now().date().month() == LocalDateTime::at(self.fecha_de_la_ultima_actualizacion as i64).date().month()
+            !(LocalDateTime::now().date().month() == LocalDateTime::at(self.fecha_de_la_ultima_actualizacion as i64).date().month())
         }
 
-        /// Crea una cuota a vencer el dia 10 del mes actual para todos los usuarios
-        /// Este metodo se puede llamar manualmente, y ademas se llama cada vez que se quiere realizar un pago
-        /// Este metodo se ejecutara como mucho una vez por mes. De ser llamado mas veces devolvera un Result
-        /// Posibles result:
+        /// Crea una cuota a vencer el dia 10 del mes actual para todos los usuarios. 
+        /// 
+        /// Este metodo se puede llamar manualmente, y ademas se llama cada vez que se quiere realizar un pago. 
+        /// Este metodo se ejecutara como mucho una vez por mes. De ser llamado mas veces devolvera un Result. 
+        /// 
+        /// Se necesitan permisos para ejecutar
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosParaEditar, NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamado, CategoriaSinData, 
         #[ink(message)]
-        pub fn actualizacion_mensual(&mut self) ->Result<(),Error>{ //TERMINAR. Devolver Result
+        pub fn actualizacion_mensual(&mut self) ->Result<(),Error>{
             self.actualizacion_mensual_priv()
         }
-        fn actualizacion_mensual_priv(&mut self) ->Result<(),Error>{ //TERMINAR. Devolver Result
+        fn actualizacion_mensual_priv(&mut self) ->Result<(),Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosParaEditar);}
             if !self.es_momento_de_otra_actualizacion() {return Err(Error::NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamado);}
 
             let ahora = LocalDateTime::now();
             for i in 1..self.mapping_lens.socios+1 {
-                                                                                                                        // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
-                match self.crear_cuota_para_socio(i, LocalDateTime::new(LocalDate::ymd(ahora.date().year(),ahora.date().month(),1).unwrap(),LocalTime::midnight()).add_seconds(604800)){
+                match self.crear_cuota_para_socio(i, LocalDateTime::new(LocalDate::ymd(ahora.date().year(),ahora.date().month(),10).unwrap(),LocalTime::midnight())){
                     Ok(_)=>{},
-                    Err(_)=>{}
+                    Err(error)=>{return Err(error)}
                 } 
             }
             self.fecha_de_la_ultima_actualizacion = ahora.to_instant().seconds() as u64;
@@ -491,12 +495,13 @@ mod registro_de_pagos_club_sem_rust {
         }
 
         /// Dados un dni y un monto, marca como pagado el pago sin pagar mas viejo
-        /// Posibles result:
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosParaEditar, SocioNoRegistrado, SocioNoPoseePagosSinAcreditar, MontoInvalido
         #[ink(message)]
-        pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> Result<(),Error>{ //TERMINAR. Devolver Result
+        pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u32 ) -> Result<(),Error>{
             self.registrar_nuevo_pago_priv(dni_socio,monto)
         }
-        fn registrar_nuevo_pago_priv(&mut self, dni_socio:u32, monto:u32 ) -> Result<(),Error>{ //TERMINAR. Devolver Result
+        fn registrar_nuevo_pago_priv(&mut self, dni_socio:u32, monto:u32 ) -> Result<(),Error>{
             match self.actualizacion_mensual(){
                 Ok(_)=>{},
                 Err(_)=>{}
@@ -733,6 +738,7 @@ mod registro_de_pagos_club_sem_rust {
         use crate::registro_de_pagos_club_sem_rust::ClubSemRust;
         use crate::registro_de_pagos_club_sem_rust::Actividad;
         use crate::registro_de_pagos_club_sem_rust::Categoria;
+        use crate::registro_de_pagos_club_sem_rust::Error;
 
         //--------------------------modulos para evitar repeticion en los test----------------------
         
@@ -783,12 +789,13 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.cargar_data_categoria(Categoria::C,2000,vec_de_actividades_c).is_ok());
 
 
-            let vec_de_actividades_a = club.get_categoria_data((Categoria::A).discriminant());
-            assert!(vec_de_actividades_a.is_ok());
-            assert_eq!(vec_de_actividades_a.unwrap().actividades_accesibles_base,vec_de_actividades_a);
+            let vec_de_actividades_a2 = club.get_categoria_data((Categoria::A).discriminant());
+            assert!(vec_de_actividades_a2.is_ok());
+            
+            assert_eq!(((vec_de_actividades_a2).unwrap().actividades_accesibles_base),vec_de_actividades_a);
             // id
             let categoria_data = club.get_categoria_data(Categoria::A.discriminant());
-            assert_eq!(Categoria::A.discriminant(),categoria_data.id());
+            assert_eq!(Categoria::A.discriminant(),categoria_data.is_ok().unwrap());
             // tokens
             assert_eq!(Categoria::A.discriminant(),5000);
             // actividades_disponibles
@@ -931,12 +938,33 @@ mod registro_de_pagos_club_sem_rust {
             assert!(!club.es_editor())
         }
         #[ink::test]
-        fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(){
+        fn test_set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(){
             let mut club = inicializar_y_crear_club_sem_rust();
             let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
 
             club.set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(5);
             assert_eq!(club.get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(),5);
+        }
+        #[ink::test]
+        fn test_actualizacion_mensual(){
+            let mut club = inicializar_y_crear_club_sem_rust();
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+
+            assert!(club.actualizacion_mensual().is_ok());
+            assert_eq!(club.actualizacion_mensual().is_err().unwrap(),Error::NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamado);
+            club.fecha_de_la_ultima_actualizacion-= 2678400;// segundos en un mes
+            assert!(club.actualizacion_mensual().is_ok());
+            // tira la actualizacion y que de Ok
+        }
+        #[ink::test]
+        fn test_marcar_pago(){
+            let mut club = inicializar_y_crear_club_sem_rust();
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            crear_y_cargar_categorias(&mut club);
+            club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),1, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) });
+
+            club.marcar_pago_pagado(club.get_primer_pago_sin_acreditar(1).unwrap());
+            club.consulta_de_pago(Some(1).pop())// verificar el estado del pago
         }
     }
 }
