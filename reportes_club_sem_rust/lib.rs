@@ -11,6 +11,8 @@ mod reportes_club_sem_rust {
         ActividadInvalida,
         /// Devuelto si el no todas las categorias del Club tienen data.
         NoTodasLasCategoriasTienenData,
+        /// Devuelto si el AccountId que llama no tiene permitido realizar la operacion, puesto que no posee los permisos necesarios.
+        NoSePoseenLosPermisosSuficientes,
     } 
     
     #[ink(storage)]
@@ -26,23 +28,26 @@ mod reportes_club_sem_rust {
 
         /// Se realiza un Vec de id_de_usuarios agregando aquellos socios morosos del Club
         #[ink(message)]
-        pub fn verificacion_de_pagos_pendientes(&self) -> Vec<u32>{
-            self.club_sem_rust.get_pagos().iter().filter(|p|p.fecha_de_pago().is_none()).map(|p|p.id()).collect()
+        pub fn verificacion_de_pagos_pendientes(&self) -> Result<Vec<u32>,Error>{
+            if !self.club_sem_rust.tengo_permisos_suficientes_para_realizar_operaciones() {return Err(Error::NoSePoseenLosPermisosSuficientes)};
+            let ids = self.club_sem_rust.get_pagos().unwrap().iter().filter(|p|p.fecha_de_pago().is_none()).map(|p|p.id()).collect();
+            Ok(ids)
         }
 
         /// Dado un Timestamp, se realiza un Vec de la platita total recaudada de cada categoria en ese mes y anio
         #[ink(message)]
-        pub fn informe_recaudacion_mensual(&self, mes_y_anio:Timestamp) ->  Vec<u128>{
+        pub fn informe_recaudacion_mensual(&self, mes_y_anio:Timestamp) -> Result<Vec<u128>,Error>{
+            if !self.club_sem_rust.tengo_permisos_suficientes_para_realizar_operaciones() {return Err(Error::NoSePoseenLosPermisosSuficientes)};
             let cant_categorias = self.club_sem_rust.cant_categorias();
             let mut monto_categorias_mensual = vec![0;cant_categorias as usize];
             
-            self.club_sem_rust.get_pagos_del_mes_y_anio(mes_y_anio).iter().filter(|p|p.fecha_de_pago().is_some())
+            self.club_sem_rust.get_pagos_del_mes_y_anio(mes_y_anio).unwrap().iter().filter(|p|p.fecha_de_pago().is_some())
             .for_each(|p|{
                 let categoria = self.club_sem_rust.categoria_de(p.socio_id()).unwrap();
                 monto_categorias_mensual[categoria.discriminant() as usize]+=p.monto();
             
             });
-            monto_categorias_mensual
+            Ok(monto_categorias_mensual)
         }
 
         /// Dado un ID_actividad, retorna un listado de IDs de socios no morosos, cuyo plan les permita la asistencia a la actividad dada
@@ -50,16 +55,16 @@ mod reportes_club_sem_rust {
         /// Posibles Error: ActividadInvalida, NoTodasLasCategoriasTienenData
         #[ink(message)]
         pub fn informe_no_morosos_de_actividad(&self, id_actividad: u32) -> Result<Vec<u32>,Error> {
+            if !self.club_sem_rust.tengo_permisos_suficientes_para_realizar_operaciones() {return Err(Error::NoSePoseenLosPermisosSuficientes)};
             if !self.club_sem_rust.existe_actividad_id(id_actividad) {return Err(Error::ActividadInvalida)}
             if !self.club_sem_rust.todas_las_categorias_tienen_sus_datas_cargadas() {return Err(Error::NoTodasLasCategoriasTienenData)}
             
-            let mut res= self.club_sem_rust.get_pagos().iter().filter(|p|
+            let mut res= self.club_sem_rust.get_pagos().unwrap().iter().filter(|p|
                 p.fecha_de_pago().is_some() && self.club_sem_rust.socio_tiene_permitida_la_asistencia_a(p.socio_id(),id_actividad).unwrap()) 
                 .map(|p|p.id()).collect::<Vec<u32>>();
             res.dedup();
             Ok(res)
         } 
-    
     }
 
 
@@ -70,24 +75,27 @@ mod reportes_club_sem_rust {
     /// The below code is technically just normal Rust code.
     #[cfg(test)]
     mod tests {
-        /*/// Imports all the definitions from the outer scope so we can use them here.
+        use core::hash::Hash;
+
         use super::*;
 
-        /// We test if the default constructor does its job.
+        fn crear_contrato() {/*-> ReportesClubSemRust{
+            let contract = ink::env::account_id::<ink::env::DefaultEnvironment>();
+            ink::env::test::set_callee::<ink::env::DefaultEnvironment>(contract);
+            
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let duenio = accounts.alice;
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(duenio);
+            
+            let club_ref=ClubSemRustRef::new(duenio,3,10,true);
+            club_ref.;
+            //let rep_club=ReportesClubSemRust::new(club_ref);
+            ReportesClubSemRust::new()*/
+        } 
         #[ink::test]
-        fn default_works() {
-            let reportes_club_sem_rust = ReportesClubSemRust::default();
-            assert_eq!(reportes_club_sem_rust.get(), false);
+        fn test_verificacion_de_pagos_pendientes() {
+            
         }
-
-        /// We test a simple use case of our contract.
-        #[ink::test]
-        fn it_works() {
-            let mut reportes_club_sem_rust = ReportesClubSemRust::new(false);
-            assert_eq!(reportes_club_sem_rust.get(), false);
-            reportes_club_sem_rust.flip();
-            assert_eq!(reportes_club_sem_rust.get(), true);
-        }*/
     }
 
 }
