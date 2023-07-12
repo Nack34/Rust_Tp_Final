@@ -1,8 +1,0 @@
-C:\Users\NICOLAS\desktop\2023\Primer Semestre\Rust\Rust_TpFinal\registro_de_pagos_club_sem_rust\target\ink\release\deps\impl_trait_for_tuples-d8572e120dc0faae.dll: C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\lib.rs C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\full_automatic.rs C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\semi_automatic.rs C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\utils.rs
-
-C:\Users\NICOLAS\desktop\2023\Primer Semestre\Rust\Rust_TpFinal\registro_de_pagos_club_sem_rust\target\ink\release\deps\impl_trait_for_tuples-d8572e120dc0faae.d: C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\lib.rs C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\full_automatic.rs C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\semi_automatic.rs C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\utils.rs
-
-C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\lib.rs:
-C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\full_automatic.rs:
-C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\semi_automatic.rs:
-C:\Users\NICOLAS\.cargo\registry\src\github.com-1ecc6299db9ec823\impl-trait-for-tuples-0.2.2\src\utils.rs:
