@@ -1,6 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 #[ink::contract]
 mod reportes_club_sem_rust {
+    use ink::prelude::string::String;
+    use ink::prelude::vec::Vec;
+
     use registro_de_pagos_club_sem_rust::ClubSemRustRef;
     /// Los posibles tipos de errores al llamar a los metodos del contrato
     /// 
@@ -59,7 +62,8 @@ mod reportes_club_sem_rust {
             let Ok(pagos) = binding else {return Err(Error::FechaInvalida)};
 
             let cant_categorias = self.club_sem_rust.cant_categorias();
-            let mut monto_categorias_mensual = vec![0;cant_categorias as usize];
+            let mut monto_categorias_mensual = Vec::new();
+            for _ in 0..cant_categorias{ monto_categorias_mensual.push(0); }
 
             // para tomarlo como recaudado, los pagod tienen que estar pagados
             pagos.iter().filter(|p|p.2.is_some()).for_each(|p|{

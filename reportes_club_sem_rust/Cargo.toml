@@ -6,8 +6,7 @@ edition = "2021"
 
 [dependencies]
 ink = { version = "4.2.0", default-features = false }
-ink-analyzer-ir = "0.6.0"
-datetime = "0.5.2"
+
 scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
 scale-info = { version = "2.6", default-features = false, features = ["derive"], optional = true }
 registro_de_pagos_club_sem_rust = { path = "registro_de_pagos_club_sem_rust", default-features = false, features = ["ink-as-dependency"] }

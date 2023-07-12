@@ -3,21 +3,247 @@ pub use self::registro_de_pagos_club_sem_rust::ClubSemRustRef;
 #[ink::contract]
 mod registro_de_pagos_club_sem_rust {
 
+    
+
+    use ink::env::block_timestamp;
     use ink::storage::Mapping;
     use ink::prelude::string::String;
+    use ink::prelude::vec::Vec;
     use ink::storage::Lazy;
 
-    // https://docs.rs/datetime/latest/datetime/index.html
-    use datetime::LocalDateTime;
-    use datetime::DatePiece;
-    use datetime::LocalDate;
-    use datetime::LocalTime;
-    use datetime::Month;
+
 
     // https://docs.rs/strum_macros/0.25.1/strum_macros/index.html
-    use strum::EnumCount;
-    use strum_macros::EnumCount as EnumCountMacro;
-    use strum_macros::EnumIter;
+    //use strum::EnumCount;
+    //use strum_macros::EnumCount as EnumCountMacro;
+    //use strum_macros::EnumIter;
+    // para remplazar Strum, como Strum simplemente era usado para saber la cantidad de variantes de los enum, lo que himos fue, en los metodos en los que se usaba COUNT, lo reemplazamos por en numero, siende ese nro, la cantidad de variantes del enum 
+
+    // https://docs.rs/datetime/latest/datetime/index.html
+    //use datetime::LocalDateTime;
+    //use datetime::DatePiece;
+    //use datetime::LocalDate;
+    //use datetime::LocalTime;
+    //use datetime::Month;
+    // para reemplazar datetime, creamos los structs e implementamos su logica manualmente. No documentamos nada referente a datetime ya que es una copia del real crate datetime. Para leer sobre su documentacion dirigirse al link anterior
+
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,PartialOrd,Copy)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    struct LocalDateTime{
+        local_date:LocalDate, local_time:LocalTime
+    }
+    impl LocalDateTime{
+        pub fn new(local_date:LocalDate, local_time:LocalTime) -> LocalDateTime{
+            LocalDateTime{local_date,local_time}
+        }
+        pub fn now(club:&ClubSemRust) -> LocalDateTime{
+            LocalDateTime::at(club.ahora() as i64)
+        }
+        // to_instant no se usa para ninguna parte logica del programa, pero ya que se uso, para no modificar la logica es necesario que exista
+        pub fn to_instant(&self) -> LocalDateTime{
+            self.clone()
+        }
+        pub fn seconds(&self) -> Timestamp{
+            self.local_date.cant_segundos() + self.local_time.segundos as u64
+        }
+        pub fn local_date_time_del_inicio_del_time_stamp()->LocalDateTime{
+            LocalDateTime { local_date:LocalDate{year:1970,month:Month::January,day:1},local_time: LocalTime::midnight() }
+        }
+        pub fn at(seconds_since_1970:i64)-> LocalDateTime{
+            let mut local_date_time_resultante=Self::local_date_time_del_inicio_del_time_stamp();
+            let cant_dias: u32= (seconds_since_1970 / 86400) as u32; // 86400 cantidad de segundos en un dia
+            let cant_segundos: u32= (seconds_since_1970 % 86400) as u32; // 86400 cantidad de segundos en un dia
+            local_date_time_resultante.local_date.sumar_dias(cant_dias);
+            local_date_time_resultante.local_time.segundos+=cant_segundos;
+            local_date_time_resultante
+        }
+        pub fn date(&self)-> LocalDate{
+            self.local_date.clone()
+        }
+        pub fn add_seconds(&mut self,seconds:u128) -> Self{
+            let cantidad_de_dias=(seconds/86400) as u32;
+            self.local_date.sumar_dias(cantidad_de_dias);
+            self.clone()
+        }
+    }
+    
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,PartialOrd,Copy)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    enum Month{
+        January,
+        February,
+        March,
+        April,
+        May,
+        June,
+        July,
+        August,
+        September,
+        October,
+        November,
+        December,
+    }
+    impl Month{
+        pub fn from_one(mes:i8) ->Result<Self,Error>{
+            match mes {
+                1 => {return Ok(Month::January);}
+                2 => {return Ok(Month::February);}
+                3 => {return Ok(Month::March);}
+                4 => {return Ok(Month::April);}
+                5 => {return Ok(Month::May);}
+                6 => {return Ok(Month::June);}
+                7 => {return Ok(Month::July);}
+                8 => {return Ok(Month::August);}
+                9 => {return Ok(Month::September);}
+                10 => {return Ok(Month::October);}
+                11 => {return Ok(Month::November);}
+                12 => {return Ok(Month::December);}
+                _=> {return Err(Error::FechaInvalida);}
+            }
+        }
+    }
+
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,PartialOrd,Copy)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    struct LocalDate{
+        year:    i64,
+        month:   Month,
+        day:     i8,
+    }
+    impl LocalDate{
+        pub fn ymd(year:i64, month:Month,day:i8) -> Result<LocalDate,Error>{
+            if !Self::es_fecha_valida(year,month.clone(),day) { return Err(Error::FechaInvalida) }
+            Ok(LocalDate{year,month,day})
+        }
+        
+        pub fn year(&self) -> i64{
+            self.year
+        }
+        pub fn month(&self)-> Month{
+            self.month.clone()
+        }
+
+        fn es_bisiesto(anio:i64) -> bool{
+            anio % 4 == 0 || (anio % 4 == 0 && anio % 100 == 0 && anio % 400 == 0) 
+        }
+        fn es_dia_valido(dia:i8, dia_max:i8) -> bool{
+            dia>0 && dia<=dia_max
+        }
+        fn es_fecha_valida(anio:i64, mes:Month, dia:i8) -> bool{
+            Self::es_dia_valido(dia,Self::max_dia(anio,mes.clone()))
+        }
+        fn sumar_dias(&mut self,dias:u32){
+            for _i in 0..dias {
+                self.day+=1;
+                self.chequear_carry();
+            }
+        }
+        fn chequear_carry(&mut self){
+            if !Self::es_fecha_valida(self.year,self.month.clone(),self.day) {
+                if !self.inc_mes().is_ok(){
+                    self.month=Month::January;
+                    self.year+=1;
+                }
+                self.day = 1;
+            }
+        }
+        fn max_dia(anio:i64,mes:Month) -> i8{ 
+            match mes{
+                Month::February=> {if Self::es_bisiesto(anio) {29} else {28}},
+                Month::January|Month::March|Month::May|Month::July|Month::August|Month::October|Month::December=>31,
+                Month::April|Month::June|Month::September|Month::November=>30,
+            }   
+        }
+        fn inc_mes(&mut self) -> Result<(),()>{
+            match self.month{
+                Month::January => {self.month =Month::February} 
+                Month::February => {self.month =Month::March} 
+                Month::March => {self.month =Month::April} 
+                Month::April => {self.month =Month::May} 
+                Month::May => {self.month =Month::June} 
+                Month::June => {self.month =Month::July} 
+                Month::July => {self.month =Month::August} 
+                Month::August => {self.month =Month::September} 
+                Month::September => {self.month =Month::October} 
+                Month::October => {self.month =Month::November} 
+                Month::November => {self.month =Month::December} 
+                Month::December => {return Err(())} 
+            }
+            Ok(())
+        }
+        fn mes_ant(month:Month) -> Result<Month,()>{
+            match month{
+                Month::January => {Err(())} 
+                Month::February => {Ok(Month::January)} 
+                Month::March => {Ok(Month::February)} 
+                Month::April => {Ok(Month::March)} 
+                Month::May => {Ok(Month::April)} 
+                Month::June => {Ok(Month::May)} 
+                Month::July => {Ok(Month::June)} 
+                Month::August => {Ok(Month::July)} 
+                Month::September => {Ok(Month::August)} 
+                Month::October => {Ok(Month::September)} 
+                Month::November => {Ok(Month::October)} 
+                Month::December => {Ok(Month::November)} 
+            }
+        }
+        pub fn cant_segundos(&self) ->Timestamp{
+            let segundos_en_un_dia = 86400; 
+            self.cant_dias() * segundos_en_un_dia
+        }
+        fn cant_dias(&self) -> u64{
+            self.cant_dias_rec(self.cantidad_de_meses(),self.year,self.month.clone(),self.day as u64) -1
+        }
+        fn cantidad_de_meses(&self) -> u64{
+            (self.year -1970) as u64 * 12 + (self.month.clone() as u64 )
+        }
+        fn cant_dias_rec(&self,cant_meses_que_faltan_contar:u64,mut anio_a_contar:i64,mes_a_contar:Month,dias_sumados:u64) ->u64{
+            if cant_meses_que_faltan_contar== 0{
+                return dias_sumados
+            }
+
+            let binding: Result<Month, ()> = Self::mes_ant(mes_a_contar);
+            let mes_anterior;
+            if binding.is_err() {anio_a_contar-=1; mes_anterior=Month::December;}
+            else {mes_anterior = binding.unwrap()}
+            self.cant_dias_rec(cant_meses_que_faltan_contar-1,anio_a_contar,mes_anterior.clone(),dias_sumados+(Self::max_dia(anio_a_contar as i64,mes_anterior) as u64))
+        }
+    }
+    
+    // LocalTime no se usa para ninguna parte logica del programa, pero ya que se uso, para no modificar la logica es necesario que exista
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,PartialOrd,Copy)]
+    #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
+    struct LocalTime{
+        segundos:u32,
+    }
+    impl LocalTime{
+        pub fn midnight() -> LocalTime{
+            LocalTime{segundos:0}
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /// Los posibles tipos de errores all llamar a los metodos del contrato
     /// 
@@ -72,7 +298,7 @@ mod registro_de_pagos_club_sem_rust {
     /// Las posibles categorias de los socios. 
     /// Para obtener el id de categoria se debe pasar el Enum a integer. 
     #[repr(u32)]
-    #[derive(scale::Decode, scale::Encode,Debug, Clone, EnumCountMacro, EnumIter,PartialEq)]
+    #[derive(scale::Decode, scale::Encode,Debug, Clone, /*EnumCountMacro, EnumIter,*/PartialEq)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum Categoria{ 
         A,
@@ -91,7 +317,7 @@ mod registro_de_pagos_club_sem_rust {
     /// Las posibles actividades del club. 
     /// Para obtener el id de categoria se debe pasar el Enum a integer. 
     #[repr(u32)]
-    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,EnumCountMacro,EnumIter,Default)]
+    #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,/*EnumCountMacro,EnumIter,*/Default)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum Actividad{
         #[default]
@@ -273,7 +499,7 @@ mod registro_de_pagos_club_sem_rust {
 
     impl ClubSemRust {
 
-        //////////////////////////////////////////////         Constructor         //////////////////////////////////////////////
+        /// ///////////////////////////////////////////         Constructor         //////////////////////////////////////////////
         #[ink(constructor)]
         pub fn new(duenio_account_id:AccountId, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32, porcentaje_de_descuento_por_bonificacion:u32,politica_de_autorizacion_activada:bool)->Self{
             ClubSemRust::new_priv(duenio_account_id, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento, porcentaje_de_descuento_por_bonificacion,politica_de_autorizacion_activada)
@@ -295,7 +521,7 @@ mod registro_de_pagos_club_sem_rust {
                 porcentaje_de_descuento_por_bonificacion,
                 fecha_de_la_ultima_actualizacion:Timestamp::default(),
                 };
-            csr.fecha_de_la_ultima_actualizacion = LocalDateTime::now().to_instant().seconds() as u64; 
+            csr.fecha_de_la_ultima_actualizacion = LocalDateTime::now(&csr).to_instant().seconds() as u64; 
             csr.pagos.set(&Vec::new());
             csr
         }
@@ -307,7 +533,15 @@ mod registro_de_pagos_club_sem_rust {
 
         //////////////////////////////////////////////         Metodos Auxiliares         //////////////////////////////////////////////
 
+        #[cfg(not(test))] 
+        pub fn ahora(&self) ->Timestamp{
+            self.env().block_timestamp()
+        }
         
+        #[cfg(test)] 
+        pub fn ahora(&self) ->Timestamp{
+            45184555
+        }
         /// Retorna true si el caller tiene permisos suficientes para la mayoria de operaciones
         fn tiene_permiso(&self) -> bool{
             !self.politica_de_autorizacion_activada || self.es_duenio() || self.es_editor()
@@ -399,7 +633,7 @@ mod registro_de_pagos_club_sem_rust {
 
             if pagos[pago_id].fecha_de_pago.is_some(){return Err(Error::PagoYaPagado);};
 
-            pagos[pago_id].fecha_de_pago = Some(LocalDateTime::now().to_instant().seconds() as u64);
+            pagos[pago_id].fecha_de_pago = Some(LocalDateTime::now(self).to_instant().seconds() as u64);
             self.pagos.set(&pagos);
             
             Ok(())
@@ -408,7 +642,7 @@ mod registro_de_pagos_club_sem_rust {
 
 
         /// Dados un anio, mes y dia, se construlle un LocalDateTime con LocalTime en midnight
-        /// 
+        ///  LocalDate::ymd(anio:i64, mes:i8,dia:i8)
         /// Posibles Error: FechaInvalida
         fn construir_fecha_midnight(anio:i64, mes:i8,dia:i8) -> Result<LocalDateTime,Error>{
             let binding = Month::from_one(mes);
@@ -425,7 +659,7 @@ mod registro_de_pagos_club_sem_rust {
 
         /// Es momento de otra actualizacion si en este mes no fue hecha otra actualizacion
         fn es_momento_de_otra_actualizacion(&self) -> bool{
-            !(LocalDateTime::now().date().month() == LocalDateTime::at(self.fecha_de_la_ultima_actualizacion as i64).date().month())
+            !(LocalDateTime::now(self).date().month() == LocalDateTime::at(self.fecha_de_la_ultima_actualizacion as i64).date().month())
         }
 
 
@@ -593,6 +827,8 @@ mod registro_de_pagos_club_sem_rust {
 
         /// Dados el id de un socio y un monto, marca como pagado el pago sin pagar mas viejo
         /// 
+        /// Se necesitan permisos
+        /// 
         /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado, SocioNoPoseePagosSinAcreditar, MontoInvalido
         /// 
         /// Este metodo tambien ejecuta actualizacion mensual
@@ -637,7 +873,7 @@ mod registro_de_pagos_club_sem_rust {
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
             if !self.es_momento_de_otra_actualizacion() {return Err(Error::NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamado);}
 
-            let ahora = LocalDateTime::now();
+            let ahora = LocalDateTime::now(self);
             for i in 1..self.mapping_lens.socios+1 {
                 match self.crear_cuota_para_socio(i, LocalDateTime::new(LocalDate::ymd(ahora.date().year(),ahora.date().month(),10).unwrap(),LocalTime::midnight())){
                     Ok(_)=>{},
@@ -687,7 +923,7 @@ mod registro_de_pagos_club_sem_rust {
             let socio=Socio{id:self.nueva_id(TipoId::Socio),categoria,datos_personales:info_personal_del_socio};
             self.socios.insert(socio.id, &socio);
 
-            return self.crear_cuota_para_socio(socio.id, LocalDateTime::now().add_seconds(604800)); 
+            return self.crear_cuota_para_socio(socio.id, LocalDateTime::now(self).add_seconds(604800)); 
         }
 
 
@@ -792,7 +1028,8 @@ mod registro_de_pagos_club_sem_rust {
             self.cant_actividades_priv()
         }
         fn cant_actividades_priv(&self) -> u32 {
-            Actividad::COUNT as u32
+            //Actividad::COUNT as u32
+            8
         }
 
 
@@ -835,11 +1072,12 @@ mod registro_de_pagos_club_sem_rust {
             self.cant_categorias_priv()
         }
         fn cant_categorias_priv(&self) -> u32 {
-            Categoria::COUNT as u32
+            //Categoria::COUNT as u32
+            3
         }
 
 
-        // Dado el id de una categoria, retorna true si esta tiene su data cargada, false en caso contrario
+        /// Dado el id de una categoria, retorna true si esta tiene su data cargada, false en caso contrario
         #[ink(message)]
         pub fn categoria_tiene_sus_datos_cargados(&self,id_categoria: u32) ->bool{
             self.categoria_tiene_sus_datos_cargados_priv(id_categoria)
@@ -847,7 +1085,7 @@ mod registro_de_pagos_club_sem_rust {
         fn categoria_tiene_sus_datos_cargados_priv(&self,id_categoria: u32) ->bool{
             self.categorias_data.contains(id_categoria)
         }
-        // Retorna true si todas las categorias tienen sus datas cargadas, false en caso contrario
+        /// Retorna true si todas las categorias tienen sus datas cargadas, false en caso contrario
         #[ink(message)]
         pub fn todas_las_categorias_tienen_sus_datas_cargadas(&self) ->bool{
             self.todas_las_categorias_tienen_sus_datas_cargadas_priv()
@@ -923,11 +1161,13 @@ mod registro_de_pagos_club_sem_rust {
             if let Some(fecha_de_pago) = pago.fecha_de_pago.clone(){
                 return Ok(fecha_de_pago > pago.fecha_de_vencimiento)
             }
-            return Ok(LocalDateTime::now() > LocalDateTime::at(pago.fecha_de_vencimiento as i64));
+            return Ok(LocalDateTime::now(self) > LocalDateTime::at(pago.fecha_de_vencimiento as i64));
         }
 
 
         /// Dado el id de un socio, se listan sus pagos. 
+        /// 
+        /// Se necesitan permisos
         /// 
         /// La informacion del pago se retornara en el siguiente formato: 
         /// 
@@ -971,6 +1211,8 @@ mod registro_de_pagos_club_sem_rust {
 
         /// Retorna todos datos de los pagos que se han realizado al Club
         /// 
+        /// Se necesitan permisos
+        /// 
         /// La informacion del pago se retornara en el siguiente formato: 
         /// 
         /// 0: id unico que tiene en el club
@@ -1012,6 +1254,8 @@ mod registro_de_pagos_club_sem_rust {
 
 
         /// Dado el id de un socio, retorna una lista de la data de los pagos del mes y anio indicados de ese socio
+        /// 
+        /// Se necesitan permisos
         /// 
         /// La informacion del pago se retornara en el siguiente formato: 
         /// 
@@ -1065,6 +1309,8 @@ mod registro_de_pagos_club_sem_rust {
 
 
         /// Dado el id de un socio, devuelve la data del primer pago sin acreditar
+        /// 
+        /// Se necesitan permisos
         /// 
         /// La informacion del pago se retornara en el siguiente formato: 
         /// 
@@ -1131,6 +1377,8 @@ mod registro_de_pagos_club_sem_rust {
 
         /// Dado un id, retorna la data del socio
         /// 
+        /// Se necesitan permisos
+        /// 
         /// La informacion se retornara en el siguiente formato: 
         /// 
         /// 0: nombre
@@ -1162,28 +1410,9 @@ mod registro_de_pagos_club_sem_rust {
             self.socios.get(socio_id)
         }
 
-
-
-        /// Dado un socio ID, retorna su categoria
-        /// 
-        /// TERMINAR: BORRAR ESTE METODO, QUE LOS QUE LOS LLAMAN USEN get_id_socio_con_dni.categoria
-        /// 
-        /// Posibles Error: SocioNoRegistrado 
-        #[ink(message)]
-        pub fn categoria_de(&self,socio_id:u128)->Result<Categoria,Error>{ 
-            self.categoria_de_priv(socio_id)
-        } 
-        fn categoria_de_priv(&self,socio_id:u128)->Result<Categoria,Error>{ 
-            let Some(socio) = self.get_socio_con_id(socio_id) else {return Err(Error::SocioNoRegistrado)};
-            Ok(socio.categoria)
-        } 
-
-        
         /// Retorna true si el socio tiene permitida la asistencia a la actividad, false en caso contrario
         /// 
         /// Posibles Error: ActividadInvalida, SocioNoRegistrado, CategoriaSinData
-        /// 
-        /// TERMINAR: BORRAR METODO categoria_de()
         #[ink(message)]
         pub fn socio_tiene_permitida_la_asistencia_a(&self, socio_id:u128,id_actividad: u32) -> Result<bool,Error>{
             self.socio_tiene_permitida_la_asistencia_a_priv(socio_id,id_actividad)
@@ -1192,8 +1421,7 @@ mod registro_de_pagos_club_sem_rust {
             if !self.existe_actividad_con_id(id_actividad) {return Err(Error::ActividadInvalida)}
             if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
 
-            let binding = self.categoria_de(socio_id);
-            let Ok(categoria) = binding else {return Err(binding.err().unwrap())};
+            let categoria = self.get_socio_con_id(socio_id).unwrap().categoria;
             
             match categoria.clone(){
                 Categoria::B{deporte_seleccionado_por_el_usuario} => {if deporte_seleccionado_por_el_usuario as u32 == id_actividad {return Ok(true);}}
@@ -1211,7 +1439,7 @@ mod registro_de_pagos_club_sem_rust {
 
 
 
-        // Dado un ID, retorna true si existe un socio con ese id 
+        /// Dado un ID, retorna true si existe un socio con ese id 
         #[ink(message)]
         pub fn existe_socio_con_id(&self, socio_id:u128) -> bool{
             self.existe_socio_con_id_priv(socio_id)
@@ -1234,74 +1462,6 @@ mod registro_de_pagos_club_sem_rust {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // CONSULTAR: 
-        // 1- 
-    // TERMINAR:
-        // 2- Chequear que la confirmacion de los permisos esta en todos los metodos
-        // 3- SOBRE LOS TESTS: ARREGLER, TERMINAR, CHEQUEAR QUE SE PASAN LOS IDS Y NO LOS DNIS
-        // 4- reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
-        // 5- Arreglar todos los tests
 
 
 
@@ -1405,7 +1565,7 @@ mod registro_de_pagos_club_sem_rust {
             let club = crear_club_sem_rust();
             
             let mut ids = Vec::new();
-            for i in 0..Categoria::COUNT as u32{
+            for i in 0..club.cant_categorias() as u32{
                 ids.push(i);
             }
             assert_eq!(ids,club.get_ids_categorias());
@@ -1415,7 +1575,7 @@ mod registro_de_pagos_club_sem_rust {
             let club = crear_club_sem_rust();
 
             let mut ids = Vec::new();
-            for i in 0..Actividad::COUNT as u32{
+            for i in 0..club.cant_actividades() as u32{
                 ids.push(i);
             }
             assert_eq!(ids,club.get_ids_actividades());
@@ -1644,7 +1804,7 @@ mod registro_de_pagos_club_sem_rust {
                 LocalDate::ymd(2021,Month::October,10).unwrap(),  
                 LocalTime::midnight() 
             );
-            let fecha_de_vencimiento_no_buscada =  LocalDateTime::now();
+            let fecha_de_vencimiento_no_buscada =  LocalDateTime::now(&club);
 
             let dni1 = 90;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni1, Categoria::A).is_ok());
@@ -1712,7 +1872,7 @@ mod registro_de_pagos_club_sem_rust {
             club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::C);
             let id1 = club.get_id_socio_con_dni(dni).unwrap();
 
-            let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
+            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
             assert!((club.crear_cuota_para_socio(id1,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             
             let pagos =club.get_pagos_del_socio_con_id(id1);
@@ -1761,7 +1921,7 @@ mod registro_de_pagos_club_sem_rust {
             assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
             // se le agregan 2 cuotas y las paga al dia
-            let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
+            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
             assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),2);
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
@@ -1773,7 +1933,7 @@ mod registro_de_pagos_club_sem_rust {
             // no tiene bonificacion todavia
             assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
-            let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
+            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
             assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),3);
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
@@ -1786,7 +1946,7 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
             
             // se le agrega otra cuota (esta tiene bonificacion) y la paga al dia
-            let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
+            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
             assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),4);
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
@@ -1903,7 +2063,7 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
             let socio_id = club.get_id_socio_con_dni(dni).unwrap();
 
-            let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
+            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
             assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
             assert!(club.registrar_nuevo_pago(socio_id, pago.monto).is_ok());
@@ -1928,5 +2088,9 @@ mod registro_de_pagos_club_sem_rust {
             club.fecha_de_la_ultima_actualizacion-= 2678400;
             assert_eq!(club.actualizacion_mensual().err().unwrap(),Error::CategoriaSinData)
         }
+
+    
+
     }
+
 }
