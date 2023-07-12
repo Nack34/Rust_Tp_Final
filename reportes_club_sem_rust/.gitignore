@@ -1,6 +1,5 @@
 # Ignore build artifacts from the local tests sub-crate.
-/target/debug
-/target/cxxbridge
+/target/
 
 # Ignore backup files creates by cargo fmt.
 **/*.rs.bk
