@@ -1,0 +1,1 @@
+C:\Users\NICOLAS\desktop\2023\Primer\ Semestre\Rust\Rust_TpFinal\reportes_club_sem_rust\target\ink\wasm32-unknown-unknown\release\reportes_club_sem_rust.wasm: \\?\C:\Users\NICOLAS\Desktop\2023\Primer\ semestre\Rust\Rust_TpFinal\reportes_club_sem_rust\lib.rs

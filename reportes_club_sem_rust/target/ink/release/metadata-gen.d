@@ -1,0 +1,1 @@
+C:\Users\NICOLAS\desktop\2023\Primer\ Semestre\Rust\Rust_TpFinal\reportes_club_sem_rust\target\ink\release\metadata-gen.exe: \\?\C:\Users\NICOLAS\AppData\Local\Temp\cargo-contract_nfTv73\.ink\metadata_gen\main.rs \\?\C:\Users\NICOLAS\Desktop\2023\Primer\ semestre\Rust\Rust_TpFinal\reportes_club_sem_rust\lib.rs
