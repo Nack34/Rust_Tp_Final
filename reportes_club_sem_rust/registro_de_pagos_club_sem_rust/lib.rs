@@ -7,17 +7,41 @@ mod registro_de_pagos_club_sem_rust {
     use ink::prelude::string::String;
     use ink::storage::Lazy;
 
+    // https://docs.rs/datetime/latest/datetime/index.html
     use datetime::LocalDateTime;
     use datetime::DatePiece;
     use datetime::LocalDate;
     use datetime::LocalTime;
+    use datetime::Month;
 
-    use strum::{EnumCount};
-    use strum_macros::{EnumCount as EnumCountMacro,FromRepr};
-    use strum::IntoEnumIterator;
+    // https://docs.rs/strum_macros/0.25.1/strum_macros/index.html
+    use strum::EnumCount;
+    use strum_macros::EnumCount as EnumCountMacro;
     use strum_macros::EnumIter;
 
     /// Los posibles tipos de errores all llamar a los metodos del contrato
+    /// 
+    /// SocioNoRegistrado es devuelto si el socio buscado no se encuentra registrado en el club. 
+    /// 
+    /// ActividadInvalida es devuelto si el Id de actividad ingresado no representa una actividad del Club.
+    /// 
+    /// CategoriaInvalida es devuelto si el Id de categoria ingresado no representa una categoria del Club.
+    /// 
+    /// CategoriaSinData es devuelto si no se cargo la data de la categoria buscada.
+    /// 
+    /// PagoNoRegistrado es devuelto si el pago buscado nunca se registro.
+    /// 
+    /// PagoYaPagado es devuelto si el pago que se quiso pagar ya habia sido pagado con anterioridad.
+    /// 
+    /// NoSePoseenLosPermisosSuficienteses es devuelto si el AccountId que llama no tiene permitido realizar la operacion, puesto que no posee los permisos necesarios.
+    /// 
+    ///  NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamadoes devuelto si no transcurrio el tiempo necesario para que este metodo vuelva a ejecutarse
+    /// 
+    /// SocioNoPoseePagosSinAcreditar es devuelto si se quiere pagar un pago de un socio que no posee pagos sin acreditar
+    /// 
+    /// MontoInvalido es devuelto si el monto ingresado no corresponde con el del pago a acreditar
+    /// 
+    /// FechaInvalida es devuelto si la fecha ingresada no corresponde a una fecha real
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode,Clone)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum Error {
@@ -41,16 +65,14 @@ mod registro_de_pagos_club_sem_rust {
         SocioNoPoseePagosSinAcreditar,
         /// Devuelto si el monto ingresado no corresponde con el del pago a acreditar
         MontoInvalido,        
+        /// Devuelto si la fecha ingresada no corresponde a una fecha real
+        FechaInvalida
     }
 
-    /// Voy a llorar del asco que me da hacer "Cantidad". Pido disculpas por los malestares emocionales que esto pueda llegar a crear
-    /// "Cantidad"  puede dar errores
-    /// MODIFICAR. TERMINAR. PEDIR DISCULPAS 
-    /// 
     /// Las posibles categorias de los socios. 
-    /// Para obtener el id de categoria se debe pasar el Enum a u32. 
+    /// Para obtener el id de categoria se debe pasar el Enum a integer. 
     #[repr(u32)]
-    #[derive(scale::Decode, scale::Encode,Debug, Clone, EnumCountMacro, EnumIter)]
+    #[derive(scale::Decode, scale::Encode,Debug, Clone, EnumCountMacro, EnumIter,PartialEq)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     pub enum Categoria{ 
         A,
@@ -58,17 +80,16 @@ mod registro_de_pagos_club_sem_rust {
         C,
     }
     impl Categoria {
-        pub fn discriminant(&self) -> u32 {
+        /// Retorna el enum convertido a u32
+        /// 
+        /// Ver mas en https://doc.rust-lang.org/std/mem/fn.discriminant.html
+        fn discriminant(&self) -> u32 {
             unsafe { *<*const _>::from(self).cast::<u32>() }
         }
     }
     
-    /// Voy a llorar del asco que me da hacer "Cantidad". Pido disculpas por los malestares emocionales que esto pueda llegar a crear
-    /// "Cantidad"  puede dar errores
-    /// MODIFICAR. TERMINAR. PEDIR DISCULPAS 
-    /// 
     /// Las posibles actividades del club. 
-    /// Para obtener el id de categoria se debe pasar el Enum a u32. 
+    /// Para obtener el id de categoria se debe pasar el Enum a integer. 
     #[repr(u32)]
     #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,EnumCountMacro,EnumIter,Default)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
@@ -95,17 +116,30 @@ mod registro_de_pagos_club_sem_rust {
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     struct DatosPersonalesSocio{
+    /// nombre del socio 
         nombre:String,
+    /// apellido del socio
         apellido:String,
+    /// dni del socio
         dni:u32
     }
 
-    /// DOCUMENTAR. TERMINAR
+    /// La data de una categoria.
     /// 
-    ///  
+    /// Es necesario cargar las datas de las categorias para que el club funcione correctamente.
+    /// 
+    /// Guarda:
+    /// 
+    /// su id unica. Esta se calcula como la posicion relativa de la categoria en el enum. 
+    /// 
+    /// el costo mensual en tokens de la catagoria.
+    /// 
+    /// Las actividades accesibles base. 
+    /// Dependiendo de la categoria, podrian haber mas actividades, que dependan de la seleccion del socio. 
+    /// Estas estaran guardadas en la informacion del socio
     #[derive(scale::Decode, scale::Encode,Debug,Clone)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct DatosCategoria{
+    struct DatosCategoria{
         /// El id de la categoria.
         /// Se obtiene al cnvertir el enum en u32
         id:u32, 
@@ -114,34 +148,19 @@ mod registro_de_pagos_club_sem_rust {
         /// Las actividades accesibles base.
         actividades_accesibles_base: Vec<Actividad>,
     }
-    impl DatosCategoria{
-        /// Retorna el id de la categoria de los cuales estos datos son
-        pub fn id (&self) -> u32{
-            self.id
-        }
-        /// Retorna el costo mensual (en tokens) de la categoria de los cuales estos datos son
-        pub fn costo_mensual_en_tokens (&self) -> u128{
-            self.costo_mensual_en_tokens
-        }
-        /// Retorna las actividades base que la categoria, de los cuales estos datos son, tiene acceso
-        pub fn actividades_accesibles_base (&self) ->  Vec<Actividad>{
-            self.actividades_accesibles_base.clone()
-        }
-    }
-
 
     /// La informacion de un socio. 
     /// Guarda:
     /// 
     /// su id unica. Esta se calcula como el utimo id+1. 
     /// 
-    /// la categoria del socio. Para obtener la informacion de la categoria se debera usar get_categoria_data. 
+    /// la categoria del socio. 
     /// 
-    /// sus datos personales 
+    /// sus datos personales. 
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     struct Socio{
-        id:u32,
+        id:u128,
         categoria:Categoria,
         datos_personales:DatosPersonalesSocio
     }
@@ -151,9 +170,9 @@ mod registro_de_pagos_club_sem_rust {
     /// 
     /// su id unica. Esta se calcula como el utimo id+1. 
     /// 
-    /// el socio_id. Para obtener la informacion del socio se deberan usar los diferentes getters para cada uno de sus campos. CHEQUEAR. TERMINAR
+    /// el id del socio a quien le pertenece este pago.
     /// 
-    /// la fecha_de_pago del socio al que le corresponde, si es que tiene. 
+    /// la fecha de pago del socio al que le corresponde, si es que tiene. 
     /// 
     /// la fecha de vencimiento de este pago. 
     /// 
@@ -162,52 +181,50 @@ mod registro_de_pagos_club_sem_rust {
     /// informacion sobre si este pago tiene o no bonificacion
     #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
-    pub struct Pago{
-        id:u32,
-        socio_id: u32,
+    struct Pago{
+        /// El id unico del pago
+        id:u128,
+        /// El id del socio que realizo o que debe realizar el pago
+        socio_id: u128,
+        /// La fecha en la que se realizo el pago del pago, si se realizo
         fecha_de_pago:Option<Timestamp>,
+        /// La fecha de vencimiento del pago
         fecha_de_vencimiento:Timestamp,
+        /// El monto del pago
         monto:u128,
+        /// Retorna true si el pago fue con bonificacion, false en caso contrario
         tiene_bonificacion:bool
     }
-    impl Pago{
-        /// Retorna el id del socio que realizo el pago
-        pub fn socio_id(&self) -> u32{
-            self.socio_id
-        }
-        /// Retorna el id del pago
-        pub fn id(&self) -> u32{
-            self.id
-        }
-        /// Retorna la fecha en la que se realizo el pago del pago, si se realizo
-        pub fn fecha_de_pago(&self) -> Option<Timestamp>{
-            self.fecha_de_pago.clone()
-        }
-        /// Retorna la fecha de vencimiento del pago
-        pub fn fecha_de_vencimiento(&self) -> Timestamp{
-            self.fecha_de_vencimiento.clone()
-        }
-        /// Retorna el monto del pago
-        pub fn monto(&self) -> u128{
-            self.monto
-        }
-        /// Retorna true si el pago fue con bonificacion, false en caso contrario
-        pub fn tiene_bonificacion(&self) -> bool{
-            self.tiene_bonificacion
-        }
-    }
-        
+    /// TipoId es usado para obtener las IDs
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     enum TipoId{
         Socio, Pago,
     }
+    /// MappingLens es usado para obtener las IDs
     #[derive(scale::Decode, scale::Encode,Debug)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     struct MappingLens{
-        socios:u32,
+        socios:u128,
     }
 
+    /// El Club 
+    /// 
+    /// Tiene informacion sobre:
+    /// 
+    /// la politica de autorizaciones. Se tendra en cuenta para saber si se tiene o no permiso para operar
+    /// 
+    /// el duenio. Es quien tiene el poder de realizar todas las operaciones.
+    /// 
+    /// los editores del contrato. Son los que tendran el permiso de realizar operaciones de ser necesaria una autorizacion
+    /// 
+    /// los socios del Club.
+    /// 
+    /// las datas de las categorias de los Socios
+    /// 
+    /// los pagos realizados por los socios al club
+    /// 
+    /// la cantidad de pagos consecutivos sin atrasos necesarios para descuento en las cuotas de los usuarios y el porcentaje de descuento que se les hara a las cuotas de los usuarios si tienen bonificacion 
     #[ink(storage)]
     pub struct ClubSemRust {
         /// Se podrá activar o desactivar esta política de autorización por parte del dueño del contrato. 
@@ -217,17 +234,19 @@ mod registro_de_pagos_club_sem_rust {
         /// El duenio del contrato.
         /// 
         /// Tendrá el poder de siempre tener permiso para cualquier operacion. 
-        /// Podra autorizar o desautorizar a los editores
-        /// Podra activar o desactivar la politica de actorizacion 
+        /// Podra autorizar o desautorizar a los editores. 
+        /// Podra activar o desactivar la politica de actorizacion. 
+        /// El cargo puede cederse. 
         duenio_account_id:AccountId,
 
         /// Los editores del contrato.
         /// 
-        /// Son los que tendran el permiso de realizar operaciones de ser necesaria una autorizacion
+        /// Son los que tendran el permiso de realizar operaciones de ser necesaria una autorizacion.
+        /// El duenio puede autorizarlos y desautorizarlos
         editores:Mapping<AccountId,AccountId>,
 
         /// Los socios del Club.
-        socios:Mapping<u32,Socio>,
+        socios:Mapping<u128,Socio>,
 
         /// Las datas de las categorias de los socios.
         /// 
@@ -253,6 +272,8 @@ mod registro_de_pagos_club_sem_rust {
     }
 
     impl ClubSemRust {
+
+        //////////////////////////////////////////////         Constructor         //////////////////////////////////////////////
         #[ink(constructor)]
         pub fn new(duenio_account_id:AccountId, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento:u32, porcentaje_de_descuento_por_bonificacion:u32,politica_de_autorizacion_activada:bool)->Self{
             ClubSemRust::new_priv(duenio_account_id, cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento, porcentaje_de_descuento_por_bonificacion,politica_de_autorizacion_activada)
@@ -279,67 +300,74 @@ mod registro_de_pagos_club_sem_rust {
             csr
         }
 
-        // ----------- Metodos privados
+
+
+
+
+
+        //////////////////////////////////////////////         Metodos Auxiliares         //////////////////////////////////////////////
+
         
+        /// Retorna true si el caller tiene permisos suficientes para la mayoria de operaciones
         fn tiene_permiso(&self) -> bool{
             !self.politica_de_autorizacion_activada || self.es_duenio() || self.es_editor()
         }
+        /// Retorna true si el caller es el duenio
         fn es_duenio (&self) -> bool{
             self.duenio_account_id == self.env().caller()
         }
+        /// Retorna true si el caller es editor
         fn es_editor (&self) -> bool{
             self.editores.contains(self.env().caller())
         }
 
         /// Retorna una nueva Id para el TipoId seleccionado. 
-        /// Siempre incrementa
-        fn nueva_id (&mut self,tipo_id:TipoId) -> u32{
+        fn nueva_id (&mut self,tipo_id:TipoId) -> u128{
             match tipo_id{
-                TipoId::Pago => {return (self.pagos.get_or_default().len()) as u32},
+                TipoId::Pago => {return (self.pagos.get_or_default().len()) as u128},
                 TipoId::Socio => {self.mapping_lens.socios +=1; return self.mapping_lens.socios},
             }
         }
 
         /// Analiza los pagos del socio y retorna true si cumple con las bonificaciones para que el proximo pago sea con bonificacion, false en caso contrario
-        fn socio_cumple_las_condiciones_para_obtener_la_bonificacion(&self,socio_id:u32) -> bool{
-            let pagos = self.pagos.get_or_default();
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado
+        fn socio_cumple_las_condiciones_para_obtener_la_bonificacion(&self,socio_id:u128) -> Result<bool,Error>{
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
+            let pagos = self.get_pagos_del_socio_con_id(socio_id).unwrap();
 
             let mut cant_pagos_del_usuario =0; 
             let mut cant_pagos_del_usuario_que_cumplen_la_condicion =0; 
 
             for pago in pagos.iter().rev() {
-                if pago.socio_id==socio_id {
                     cant_pagos_del_usuario+=1;                    
-                    if !pago.tiene_bonificacion && !self.pago_esta_vencido(pago){
+                    if !pago.tiene_bonificacion && !self.pago_esta_vencido(pago.id).unwrap(){
                         cant_pagos_del_usuario_que_cumplen_la_condicion+=1;
                     } 
-                }
                 
                 if cant_pagos_del_usuario==self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento ||
                     cant_pagos_del_usuario>cant_pagos_del_usuario_que_cumplen_la_condicion {break;}
             }
-            return cant_pagos_del_usuario_que_cumplen_la_condicion==self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento;
+            
+            Ok(cant_pagos_del_usuario_que_cumplen_la_condicion==self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento)
         }
-        fn pago_esta_vencido(&self,pago:&Pago) -> bool{
-            if let Some(fecha_de_pago) = pago.fecha_de_pago.clone(){
-                return fecha_de_pago > pago.fecha_de_vencimiento
-            }
-            return LocalDateTime::now() > LocalDateTime::at(pago.fecha_de_vencimiento as i64);
-        }
+
 
         /// Crea una cuota a vencer en fecha_de_vencimiento para el socio solicitado
         /// 
         /// Este metodo es privado del contrato
         /// 
-        /// Posibles Error: SocioNoRegistrado, CategoriaSinData
-        fn crear_cuota_para_socio(&mut self, socio_id:u32, fecha_de_vencimiento:LocalDateTime) -> Result<(),Error>{
-            if !self.socios.contains(socio_id) {return Err(Error::SocioNoRegistrado)}
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado, CategoriaSinData
+        fn crear_cuota_para_socio(&mut self, socio_id:u128, fecha_de_vencimiento:LocalDateTime) -> Result<(),Error>{
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
 
-            let id_categoria_del_usuario = self.socios.get(socio_id).unwrap().categoria.discriminant();
-            if !self.categorias_data.contains(id_categoria_del_usuario) {return Err(Error::CategoriaSinData);}
+            let id_categoria_del_usuario = self.get_socio_con_id(socio_id).unwrap().categoria.discriminant();
+            if !self.categoria_tiene_sus_datos_cargados(id_categoria_del_usuario) {return Err(Error::CategoriaSinData);}
 
-            let mut monto_cuota=self.categorias_data.get::<u32>(id_categoria_del_usuario).unwrap().costo_mensual_en_tokens;
-            let cumple_las_condiciones_para_obtener_la_bonificacion = self.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id);
+            let mut monto_cuota=self.get_categoria_datos(id_categoria_del_usuario).unwrap().costo_mensual_en_tokens;
+            let cumple_las_condiciones_para_obtener_la_bonificacion = self.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap();
             if cumple_las_condiciones_para_obtener_la_bonificacion {monto_cuota -= monto_cuota*(self.porcentaje_de_descuento_por_bonificacion as u128)/100}
 
             let cuota=Pago{id:self.nueva_id(TipoId::Pago),socio_id,fecha_de_pago:None,
@@ -348,70 +376,74 @@ mod registro_de_pagos_club_sem_rust {
                 tiene_bonificacion:cumple_las_condiciones_para_obtener_la_bonificacion
             }; 
             
-            let mut pagos = self.pagos.get_or_default();
+            let mut pagos = self.get_pagos().unwrap();
             pagos.push(cuota);
             self.pagos.set(&pagos);
             Ok(())
         }
 
-        /// Dado un dni retorna el socio, si es que existe
-        fn get_socio_dni(&self, un_dni:u32)->Option<Socio>{
-            let len = self.mapping_lens.socios;
-            for i in 1..len+1{
-                let socio = self.socios.get(i).unwrap();
-                if socio.datos_personales.dni == un_dni {
-                    return Some(socio);
-                }
-            }
-            None
-        }
-        fn listar_pagos_del_socio(&self, id_socio:u32) -> Vec<Pago>{
-            let pagos = self.pagos.get_or_default();
-            pagos.into_iter().filter(|p|p.socio_id == id_socio).collect()
-        }
 
-        fn SLICE_O_PAGINACION_QUE_ES_ESO(&self, vec:Vec<Pago>) -> Vec<Pago>{ // CONSULTAR
-            vec
-        }
-
-        /// Retorna el primer pago sin pagar del usuario solicitado, si hay alguno
-        fn get_primer_pago_sin_acreditar(&self, socio_id:u32) -> Option<Pago>{
+        /// Dado el id de un socio, retorna el primer pago sin pagar del usuario solicitado, si hay alguno
+        fn get_primer_pago_sin_acreditar(&self, socio_id:u128) -> Option<Pago>{
             self.pagos.get_or_default().iter().find(|p|p.socio_id == socio_id && p.fecha_de_pago.is_none()).cloned()
         }
 
+        /// Dado el id de un pago, lo marca como pagado steando como "ahora" la fecha de pago
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, PagoNoRegistrado, PagoYaPagado
+        fn marcar_pago_pagado(&mut self, pago_id:u128) -> Result<(),Error>{ 
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
+            let pago_id = pago_id as usize;
+            let mut pagos = self.get_pagos().unwrap();
+            if pagos.len()<=pago_id {return Err(Error::PagoNoRegistrado);};
 
-        fn marcar_pago_pagado(&mut self, pago_id:u32) -> Result<(),Error>{  // calculo que este tambien da para result
-            let mut pagos = self.pagos.get_or_default();
-            if pagos.len()<pago_id as usize {return Err(Error::PagoNoRegistrado);};
+            if pagos[pago_id].fecha_de_pago.is_some(){return Err(Error::PagoYaPagado);};
 
-            if let Some(_) = pagos[pago_id as usize].fecha_de_pago.clone(){return Err(Error::PagoYaPagado);};
-
-            pagos[pago_id as usize].fecha_de_pago = Some(LocalDateTime::now().to_instant().seconds() as u64);
+            pagos[pago_id].fecha_de_pago = Some(LocalDateTime::now().to_instant().seconds() as u64);
             self.pagos.set(&pagos);
             
             Ok(())
         }
 
 
-        // ----------- Setters 
 
-        /// Agrega la data de una categoria. 
-        /// Si ya habia data de esa categoria se pisara con la nueva ingresada.
+        /// Dados un anio, mes y dia, se construlle un LocalDateTime con LocalTime en midnight
         /// 
-        /// Si no se agregan la data de todas las categorias, otros metodos que quieran utilizarla devolveran un Err
-        /// 
-        /// Se necesitan permisos para ejecutar
-        /// 
-        /// Posibles Error: NoSePoseenLosPermisosSuficientes
-        #[ink(message)]
-        pub fn cargar_data_categoria(&mut self, categoria:Categoria, costo_mensual_en_tokens:u128, actividades_accesibles_base: Vec<Actividad>) -> Result<(),Error>{ 
-            self.cargar_data_categoria_priv(categoria,costo_mensual_en_tokens,actividades_accesibles_base)
+        /// Posibles Error: FechaInvalida
+        fn construir_fecha_midnight(anio:i64, mes:i8,dia:i8) -> Result<LocalDateTime,Error>{
+            let binding = Month::from_one(mes);
+            let Ok(mes) = binding else {return Err(Error::FechaInvalida)};
+
+            let binding = LocalDate::ymd(anio,mes,dia);
+            let Ok(local_date) = binding else {return Err(Error::FechaInvalida)};
+
+            Ok(LocalDateTime::new(
+                local_date,  
+                LocalTime::midnight() 
+            ))
         }
-        fn cargar_data_categoria_priv(&mut self, categoria:Categoria, costo_mensual_en_tokens:u128, actividades_accesibles_base: Vec<Actividad>) -> Result<(),Error>{
-            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
-            self.categorias_data.insert(categoria.discriminant(),&DatosCategoria{id:categoria.discriminant(), costo_mensual_en_tokens,actividades_accesibles_base });
-            Ok(())
+
+        /// Es momento de otra actualizacion si en este mes no fue hecha otra actualizacion
+        fn es_momento_de_otra_actualizacion(&self) -> bool{
+            !(LocalDateTime::now().date().month() == LocalDateTime::at(self.fecha_de_la_ultima_actualizacion as i64).date().month())
         }
+
+
+
+
+
+
+
+
+        //////////////////////////////////////////////         Setters         //////////////////////////////////////////////
+
+
+
+        
+        
+        // ---------------------- SOBRE EL QUIEN LLAMA A LOS METODOS (EL USUARIO)  ---------------------------
+
+
 
         /// Dado un AccountId, lo setea como nuevo duenio del Club
         /// 
@@ -428,6 +460,61 @@ mod registro_de_pagos_club_sem_rust {
             self.duenio_account_id = nuevo_duenio_account_id; 
             return Ok(());
         }
+
+
+        // ---------------------- SOBRE EL CLUB ---------------------------
+
+        /// Activa la politica de autorizacion. 
+        /// 
+        /// Solo puede ejecutarse si quien llama a este metodo es el duenio del Club
+        /// 
+        /// Posibles result: NoSePoseenLosPermisosSuficientes
+        #[ink(message)]
+        pub fn activar_politica_de_autorizacion (&mut self) -> Result<(),Error>{
+            self.activar_politica_de_autorizacion_priv()
+        }
+        fn activar_politica_de_autorizacion_priv (&mut self) -> Result<(),Error>{
+            if !self.es_duenio(){return Err(Error::NoSePoseenLosPermisosSuficientes)}
+            
+            self.politica_de_autorizacion_activada=true;
+            Ok(())
+        }
+
+        /// Desactiva la politica de autorizacion. 
+        /// 
+        /// Solo puede ejecutarse si quien llama a este metodo es el duenio del Club
+        /// 
+        /// Posibles result: NoSePoseenLosPermisosSuficientes
+        #[ink(message)]
+        pub fn desactivar_politica_de_autorizacion (&mut self) -> Result<(),Error>{
+            self.desactivar_politica_de_autorizacion_priv()
+        }
+        fn desactivar_politica_de_autorizacion_priv (&mut self) -> Result<(),Error>{
+            if !self.es_duenio(){return Err(Error::NoSePoseenLosPermisosSuficientes)}
+            
+            self.politica_de_autorizacion_activada=false;
+            Ok(())
+        }
+
+        
+        /// Dada una cantidad, la setea como nueva cantidad de pagos consecutivos sin atrasos necesarios para descuento
+        /// 
+        /// Solo puede ejecutarse si quien llama a este metodo es el duenio del Club
+        /// 
+        /// Posibles result: NoSePoseenLosPermisosSuficientes
+        #[ink(message)]
+        pub fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self,cant:u32) -> Result<(),Error>{  
+            self.set_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento_priv(cant)
+        }
+        fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento_priv(&mut self,cant:u32) -> Result<(),Error>{ 
+            if !self.es_duenio(){ return Err(Error::NoSePoseenLosPermisosSuficientes)} 
+
+            self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento=cant;
+
+            Ok(())
+        }
+
+        
         /// Dado un AccountId, lo agrega a la lista de editores autorizados 
         /// 
         /// Solo puede ejecutarse si quien llama a este metodo es el duenio del Club
@@ -460,58 +547,88 @@ mod registro_de_pagos_club_sem_rust {
             return Ok(());
         }
 
-        /// Dada una cantidad, la setea como nueva cantidad de pagos consecutivos sin atrasos necesarios para descuento
+
+        // ---------------------- SOBRE LAS ACTIVIDADES  ---------------------------
+
+
+
+
+
+        // ---------------------- SOBRE LAS CATEGORIAS  ---------------------------
+
+
+
+
+        /// Agrega la data de una categoria. 
+        /// Si ya habia data de esa categoria se pisara con la nueva ingresada.
+        /// 
+        /// Si no se agregan la data de todas las categorias, otros metodos que quieran utilizarla devolveran un Err
         /// 
         /// Se necesitan permisos para ejecutar
         /// 
-        /// Posibles result: NoSePoseenLosPermisosSuficientes
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes
         #[ink(message)]
-        pub fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(&mut self,cant:u32) -> Result<(),Error>{  
-            self.set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento_priv(cant)
+        pub fn cargar_data_categoria(&mut self, categoria:Categoria, costo_mensual_en_tokens:u128, actividades_accesibles_base: Vec<Actividad>) -> Result<(),Error>{ 
+            self.cargar_data_categoria_priv(categoria,costo_mensual_en_tokens,actividades_accesibles_base)
         }
-        fn set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento_priv(&mut self,cant:u32) -> Result<(),Error>{ 
+        fn cargar_data_categoria_priv(&mut self, categoria:Categoria, costo_mensual_en_tokens:u128, actividades_accesibles_base: Vec<Actividad>) -> Result<(),Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
-
-            self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento=cant;
-
-            return Ok(());
+            self.categorias_data.insert(categoria.discriminant(),&DatosCategoria{id:categoria.discriminant(), costo_mensual_en_tokens,actividades_accesibles_base });
+            Ok(())
         }
 
-        /// Dados un nombre, apellido, dni y una categoria, registra un nuevo socio y le crea una primer cuota a vencer dentro de 10 dias
+
+
+
+
+
+
+        // ---------------------- SOBRE LOS PAGOS ---------------------------
+
+
+
+
+
+
+
+        /// Dados el id de un socio y un monto, marca como pagado el pago sin pagar mas viejo
         /// 
-        /// Se necesitan permisos para ejecutar
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado, SocioNoPoseePagosSinAcreditar, MontoInvalido
         /// 
-        /// Posibles result: NoSePoseenLosPermisosSuficientes, CategoriaSinData, SocioNoRegistrado. 
-        /// SocioNoRegistrado aparece si falla la creacion de la primer cuota
+        /// Este metodo tambien ejecuta actualizacion mensual
         #[ink(message)]
-        pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> Result<(),Error>{
-            self.registrar_nuevo_socio_priv(nombre, apellido, dni, categoria)
+        pub fn registrar_nuevo_pago(&mut self, socio_id:u128, monto:u128 ) -> Result<(),Error>{
+            self.registrar_nuevo_pago_priv(socio_id, monto)
         }
-        fn registrar_nuevo_socio_priv(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> Result<(),Error>{
+        fn registrar_nuevo_pago_priv(&mut self, socio_id:u128, monto:u128 ) -> Result<(),Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
-            if !self.categorias_data.contains(categoria.discriminant()) {return Err(Error::CategoriaSinData);}
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
 
-            let info_personal_del_socio=DatosPersonalesSocio{nombre,apellido,dni:dni.clone()};
-            let socio=Socio{id:self.nueva_id(TipoId::Socio),categoria,datos_personales:info_personal_del_socio};
-            self.socios.insert(socio.id, &socio);
+            match self.actualizacion_mensual(){
+                Ok(_)=>{},
+                Err(_)=>{}
+            }
 
-            return self.crear_cuota_para_socio(socio.id, LocalDateTime::now().add_seconds(604800)); 
-                                        // reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
+            let Some(pago) = self.get_primer_pago_sin_acreditar(socio_id) else {return Err(Error::SocioNoPoseePagosSinAcreditar);};
+            if !(pago.monto == monto) {return Err(Error::MontoInvalido);};
+            self.marcar_pago_pagado(pago.id)
+
         }
 
-        /// Es momento de otra actualizacion si en este mes no fue hecha otra actualizacion
-        fn es_momento_de_otra_actualizacion(&self) -> bool{
-            !(LocalDateTime::now().date().month() == LocalDateTime::at(self.fecha_de_la_ultima_actualizacion as i64).date().month())
-        }
+
+
+
+
+
 
         /// Crea una cuota a vencer el dia 10 del mes actual para todos los usuarios. 
-        /// 
-        /// Este metodo se puede llamar manualmente, y ademas se llama cada vez que se quiere realizar un pago. 
-        /// Este metodo se ejecutara como mucho una vez por mes. De ser llamado mas veces devolvera un Result. 
         /// 
         /// Se necesitan permisos para ejecutar
         /// 
         /// Posibles Error: NoSePoseenLosPermisosSuficientes, NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamado, CategoriaSinData, 
+        /// 
+        /// Este metodo se puede llamar manualmente, y ademas se llama cada vez que se quiere realizar un pago. 
+        /// Este metodo se ejecutara como mucho una vez por mes, de ser llamado mas veces devolvera un Error. 
         #[ink(message)]
         pub fn actualizacion_mensual(&mut self) ->Result<(),Error>{
             self.actualizacion_mensual_priv()
@@ -531,91 +648,69 @@ mod registro_de_pagos_club_sem_rust {
             Ok(())
         }
 
-        /// Dados un dni y un monto, marca como pagado el pago sin pagar mas viejo
+
+
+
+
+
+
+
+
+
+
+
+
+
+        // ---------------------- SOBRE EL SOCIO ---------------------------
+
+
+
+
+
+
+
+        /// Dados un nombre, apellido, dni y una categoria, registra un nuevo socio y le crea una primer cuota a vencer dentro de 10 dias
         /// 
-        /// Este metodo tambien ejecuta actualizacion mensual
+        /// Se necesitan permisos para ejecutar
         /// 
-        /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado, SocioNoPoseePagosSinAcreditar, MontoInvalido
+        /// Posibles result: NoSePoseenLosPermisosSuficientes, CategoriaSinData, SocioNoRegistrado. 
+        /// SocioNoRegistrado aparece si falla la creacion de la primer cuota
         #[ink(message)]
-        pub fn registrar_nuevo_pago(&mut self, dni_socio:u32, monto:u128 ) -> Result<(),Error>{
-            self.registrar_nuevo_pago_priv(dni_socio,monto)
+        pub fn registrar_nuevo_socio(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> Result<(),Error>{
+            self.registrar_nuevo_socio_priv(nombre, apellido, dni, categoria)
         }
-        fn registrar_nuevo_pago_priv(&mut self, dni_socio:u32, monto:u128 ) -> Result<(),Error>{
-            match self.actualizacion_mensual(){
-                Ok(_)=>{},
-                Err(_)=>{}
-            }
+        fn registrar_nuevo_socio_priv(&mut self,nombre:String,apellido:String,dni:u32,categoria:Categoria) -> Result<(),Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
-            let Some(socio) = self.get_socio_dni(dni_socio) else {return Err(Error::SocioNoRegistrado);};
-            
-            let Some(pago) = self.get_primer_pago_sin_acreditar(socio.id) else {return Err(Error::SocioNoPoseePagosSinAcreditar);};
-            if !(pago.monto == monto) {return Err(Error::MontoInvalido);};
-            self.marcar_pago_pagado(pago.id)
+            if !self.categoria_tiene_sus_datos_cargados(categoria.discriminant()) {return Err(Error::CategoriaSinData);}
+
+            let info_personal_del_socio=DatosPersonalesSocio{nombre,apellido,dni:dni.clone()};
+            let socio=Socio{id:self.nueva_id(TipoId::Socio),categoria,datos_personales:info_personal_del_socio};
+            self.socios.insert(socio.id, &socio);
+
+            return self.crear_cuota_para_socio(socio.id, LocalDateTime::now().add_seconds(604800)); 
         }
 
-        /// Activa la politica de autorizacion. 
-        /// Solo puede ejecutarse si quien llama a este metodo es el duenio del Club
-        #[ink(message)]
-        pub fn activar_politica_de_autorizacion (&mut self) -> Result<(),Error>{ //TERMINAR. Devolver Result
-            self.activar_politica_de_autorizacion_priv()
-        }
-        fn activar_politica_de_autorizacion_priv (&mut self) -> Result<(),Error>{ //TERMINAR. Devolver Result
-            if !self.es_duenio(){return Err(Error::NoSePoseenLosPermisosSuficientes)}
-            
-            self.politica_de_autorizacion_activada=true;
-            Ok(())
-        }
+
+
+
+
+
+
+
+
+
+
+        //////////////////////////////////////////////         Getters         //////////////////////////////////////////////
+
         
-        /// Desactiva la politica de autorizacion. 
-        /// Solo puede ejecutarse si quien llama a este metodo es el duenio del Club
-        #[ink(message)]
-        pub fn desactivar_politica_de_autorizacion (&mut self) -> Result<(),Error>{ //TERMINAR. Devolver Result
-            self.desactivar_politica_de_autorizacion_priv()
-        }
-        fn desactivar_politica_de_autorizacion_priv (&mut self) -> Result<(),Error>{ //TERMINAR. Devolver Result
-            if !self.es_duenio(){return Err(Error::NoSePoseenLosPermisosSuficientes)}
-            
-            self.politica_de_autorizacion_activada=false;
-            Ok(())
-        }
+        
 
 
 
 
-        // ----------- Getters
+        // ---------------------- SOBRE EL QUIEN LLAMA A LOS METODOS (EL USUARIO)  ---------------------------
 
-        /// Retorna todos los ids de actividades posibles del Club
-        #[ink(message)]
-        pub fn get_ids_categorias(&self) -> Vec<u32>{
-            (0..self.cant_categorias()).collect()
-        }
-        /// Retorna todos los ids de categorias posibles del Club
-        #[ink(message)]
-        pub fn get_ids_actividades(&self) -> Vec<u32>{
-            (0..self.cant_actividades()).collect()
-        }
 
-        /// CONSULTAR. ARREGLAR. TERMINAR. MODIFICAR. PEDIR DISCULPAS
-        /// 
-        /// Retorna la cantidad de categorias posibles de los socios del Club
-        #[ink(message)]
-        pub fn cant_categorias(&self) -> u32 {
-            self.cant_categorias_priv()
-        }
-        fn cant_categorias_priv(&self) -> u32 {
-            Categoria::COUNT as u32
-        }
-
-        /// CONSULTAR. ARREGLAR. TERMINAR. MODIFICAR. PEDIR DISCULPAS
-        /// 
-        /// Retorna la cantidad de actividades posibles del Club
-        #[ink(message)]
-        pub fn cant_actividades(&self) -> u32 {
-            self.cant_actividades_priv()
-        }
-        fn cant_actividades_priv(&self) -> u32 {
-            Actividad::COUNT as u32
-        }
 
         /// Devuelve true si quien llama a este metodo es el duenio del Club, false en caso contrario
         #[ink(message)]
@@ -633,25 +728,17 @@ mod registro_de_pagos_club_sem_rust {
         fn tengo_permisos_suficientes_para_realizar_operaciones_priv(&self) -> bool{
             self.tiene_permiso()
         }
-        
-        /// Retorna true si el socio con el dni pasado por parametro es un socio del club, false en caso contrario 
-        #[ink(message)]
-        pub fn existe_socio_dni(&self,un_dni:u32)->bool{
-            self.existe_socio_dni_priv(un_dni)
-        }
-        fn existe_socio_dni_priv(&self,un_dni:u32)->bool{
-            self.get_socio_dni(un_dni).is_some()
-        }
-        
-        #[ink(message)]
-        pub fn existe_actividad_id (&self, id_actividad:u32) -> bool{
-            self.get_ids_actividades().contains(&id_actividad)
-        }
-        #[ink(message)]
-        pub fn existe_categoria_id (&self, id_categoria:u32) -> bool{
-            self.get_ids_categorias().contains(&id_categoria)
-        }
-        
+
+
+
+
+
+
+
+
+        // ---------------------- SOBRE EL CLUB ---------------------------
+
+
         /// Devuelve la cantidad de pagos consecutivos sin atrasos necesarios para descuento
         #[ink(message)]
         pub fn get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(&mut self)->u32{
@@ -661,111 +748,450 @@ mod registro_de_pagos_club_sem_rust {
             self.cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento
         }
 
-        /// Dado un dni se listan sus pagos. 
+
+
+
+
+
+
+        // ---------------------- SOBRE LAS ACTIVIDADES  ---------------------------
+
+
+
+
+
+        /// Dada una actividad, retorna su id
+        #[ink(message)]
+        pub fn get_actividad_id (&self, actividad:Actividad) -> u32{
+            self.get_actividad_id_priv(actividad)
+        }
+        fn get_actividad_id_priv (&self, actividad:Actividad) -> u32{
+            actividad as u32
+        }
+
+        /// Retorna todos los ids de categorias posibles del Club
+        #[ink(message)]
+        pub fn get_ids_actividades(&self) -> Vec<u32>{
+            self.get_ids_actividades_priv()
+        }
+        fn get_ids_actividades_priv(&self) -> Vec<u32>{
+            (0..self.cant_actividades()).collect()
+        }
+        /// Dado un id de actividad, retorna true si es una actividad valida, false en caso contrario
+        #[ink(message)]
+        pub fn existe_actividad_con_id (&self, id_actividad:u32) -> bool{
+            self.existe_actividad_con_id_priv(id_actividad)
+        }
+        fn existe_actividad_con_id_priv (&self, id_actividad:u32) -> bool{
+            self.get_ids_actividades().contains(&id_actividad)
+        }
+
+        /// Retorna la cantidad de actividades posibles del Club
+        #[ink(message)]
+        pub fn cant_actividades(&self) -> u32 {
+            self.cant_actividades_priv()
+        }
+        fn cant_actividades_priv(&self) -> u32 {
+            Actividad::COUNT as u32
+        }
+
+
+
+
+
+
+        // ---------------------- SOBRE LAS CATEGORIAS  ---------------------------
+
+
+
+        /// Dada una categoria, retorna su id
+        #[ink(message)]
+        pub fn get_categoria_id (&self, categoria:Categoria) -> u32{
+            self.get_categoria_id_priv(categoria)
+        }
+        fn get_categoria_id_priv (&self, categoria:Categoria) -> u32{
+            categoria.discriminant()
+        }
+        /// Retorna todos los ids de actividades posibles del Club
+        #[ink(message)]
+        pub fn get_ids_categorias(&self) -> Vec<u32>{
+            self.get_ids_categorias_priv()
+        }
+        fn get_ids_categorias_priv(&self) -> Vec<u32>{
+            (0..self.cant_categorias()).collect()
+        }
+        /// Dado un id de categoria, retorna true si es una categoria valida, false en caso contrario
+        #[ink(message)]
+        pub fn existe_categoria_con_id (&self, id_categoria:u32) -> bool{
+            self.existe_categoria_con_id_priv(id_categoria)
+        }
+        fn existe_categoria_con_id_priv (&self, id_categoria:u32) -> bool{
+            self.get_ids_categorias().contains(&id_categoria)
+        }
+        
+        /// Retorna la cantidad de categorias posibles de los socios del Club
+        #[ink(message)]
+        pub fn cant_categorias(&self) -> u32 {
+            self.cant_categorias_priv()
+        }
+        fn cant_categorias_priv(&self) -> u32 {
+            Categoria::COUNT as u32
+        }
+
+
+        // Dado el id de una categoria, retorna true si esta tiene su data cargada, false en caso contrario
+        #[ink(message)]
+        pub fn categoria_tiene_sus_datos_cargados(&self,id_categoria: u32) ->bool{
+            self.categoria_tiene_sus_datos_cargados_priv(id_categoria)
+        }
+        fn categoria_tiene_sus_datos_cargados_priv(&self,id_categoria: u32) ->bool{
+            self.categorias_data.contains(id_categoria)
+        }
+        // Retorna true si todas las categorias tienen sus datas cargadas, false en caso contrario
+        #[ink(message)]
+        pub fn todas_las_categorias_tienen_sus_datas_cargadas(&self) ->bool{
+            self.todas_las_categorias_tienen_sus_datas_cargadas_priv()
+        }
+        fn todas_las_categorias_tienen_sus_datas_cargadas_priv(&self) ->bool{
+            let mut res = true;
+            self.get_ids_categorias().into_iter().for_each(|c| res = res && self.categoria_tiene_sus_datos_cargados(c) );
+            res
+        }
+
+
+        /// Dado un id de categoria, retorna su data
         /// 
-        /// Si se ingresa None, se listaran los pagos de todos usuarios se han realizado al Club
+        /// La informacion del la categoria se retornara en el siguiente formato: 
         /// 
-        /// Si se ingresa Some(dni), solo se listaran los pagos del usuario cuyo dni haya sido ingresado. 
+        /// 0: id unico que tiene en el club
+        /// 
+        /// 1: costo_mensual_en_tokens
+        /// 
+        /// 2: actividades_accesibles_base
+        /// 
+        /// Posibles Error: CategoriaInvalida, CategoriaSinData
+        #[ink(message)]
+        pub fn get_data_categoria_datos(&self,id_categoria: u32) -> Result<(u32,u128,Vec<Actividad>),Error>{
+            self.get_data_categoria_datos_priv(id_categoria)
+        }
+        fn get_data_categoria_datos_priv(&self,id_categoria: u32) -> Result<(u32,u128,Vec<Actividad>),Error>{
+            if !self.existe_categoria_con_id(id_categoria) {return Err(Error::CategoriaInvalida)}
+            if !self.categoria_tiene_sus_datos_cargados(id_categoria) {return Err(Error::CategoriaSinData)}
+            
+            let binding = self.get_categoria_datos(id_categoria);
+            let Ok(data) = binding else {return Err(binding.err().unwrap())};
+
+            Ok((data.id,data.costo_mensual_en_tokens,data.actividades_accesibles_base))
+        }
+        /// METODO PRIVADO 
+        /// 
+        /// Dado un id de categoria, retorna su la data
+        /// 
+        /// Posibles Error: CategoriaInvalida, CategoriaSinData
+        fn get_categoria_datos(&self,id_categoria:u32) -> Result<DatosCategoria,Error>{
+            if !self.existe_categoria_con_id(id_categoria) {return Err(Error::CategoriaInvalida)}
+            if !self.categoria_tiene_sus_datos_cargados(id_categoria) {return Err(Error::CategoriaSinData)}
+            
+            Ok(self.categorias_data.get(id_categoria).unwrap().clone())
+        }
+
+
+    
+    
+
+
+
+
+        // ---------------------- SOBRE LOS PAGOS ---------------------------
+
+
+
+
+        /// Dado un pago, retorna true si si el pago esta vencido
+        /// 
+        /// Un pago vencido es aquel que se pago luego de la fecha de vencimiento, o que no se pago y ya paso la fecha de vencimiento 
+        /// 
+        /// Posibles Error: PagoNoRegistrado
+        #[ink(message)]
+        pub fn pago_esta_vencido (&self,pago_id:u128) -> Result<bool,Error>{
+            let pago_id = pago_id as usize;
+            let pagos = self.get_pagos().unwrap();
+            if pagos.len()<=pago_id {return Err(Error::PagoNoRegistrado);};
+
+            let pago = &pagos[pago_id];
+            
+            if let Some(fecha_de_pago) = pago.fecha_de_pago.clone(){
+                return Ok(fecha_de_pago > pago.fecha_de_vencimiento)
+            }
+            return Ok(LocalDateTime::now() > LocalDateTime::at(pago.fecha_de_vencimiento as i64));
+        }
+
+
+        /// Dado el id de un socio, se listan sus pagos. 
+        /// 
+        /// La informacion del pago se retornara en el siguiente formato: 
+        /// 
+        /// 0: id unico que tiene en el club
+        /// 
+        /// 1: socio_id
+        /// 
+        /// 2: fecha_de_pago
+        /// 
+        /// 3: fecha_de_vencimiento
+        /// 
+        /// 4: monto
+        /// 
+        /// 5: pago tiene bonificacion
         /// 
         /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado
         #[ink(message)]
-        pub fn get_pagos_de(&self, dni_ingresado:u32)-> Result<Vec<Pago>,Error>{ 
-            self.get_pagos_de_priv(dni_ingresado)
+        pub fn get_data_pagos_del_socio_con_id(&self, socio_id:u128)-> Result<Vec<(u128,u128,Option<Timestamp>,Timestamp,u128,bool)>,Error>{
+            self.get_data_pagos_del_socio_con_id_priv(socio_id)
         }
-        fn get_pagos_de_priv(&self, dni_ingresado:u32)->Result<Vec<Pago>,Error>{
+        fn get_data_pagos_del_socio_con_id_priv(&self, socio_id:u128)-> Result<Vec<(u128,u128,Option<Timestamp>,Timestamp,u128,bool)>,Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
-            let Some(socio) = self.get_socio_dni(dni_ingresado) else {return Err(Error::SocioNoRegistrado)};
-            let pagos_de_un_socio = self.listar_pagos_del_socio(socio.id);
+
+            let binding = self.get_pagos_del_socio_con_id(socio_id);
+            let Ok(data) = binding else {return Err(binding.err().unwrap())};
+
+            Ok( data.iter().map(|d| (d.id,d.socio_id,d.fecha_de_pago,d.fecha_de_vencimiento,d.monto,d.tiene_bonificacion)).collect())
+        }
+        /// METODO PRIVADO
+        /// 
+        /// Dado el id de un socio, se listan sus pagos. 
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado
+        fn get_pagos_del_socio_con_id(&self, socio_id:u128)->Result<Vec<Pago>,Error>{
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
+            let pagos_de_un_socio = self.get_pagos().unwrap().into_iter().filter(|p|p.socio_id == socio_id).collect();
             Ok(pagos_de_un_socio)
         }
+        
 
-        /// Retorna todos los pagos que se han realizado al Club
+        /// Retorna todos datos de los pagos que se han realizado al Club
+        /// 
+        /// La informacion del pago se retornara en el siguiente formato: 
+        /// 
+        /// 0: id unico que tiene en el club
+        /// 
+        /// 1: socio_id
+        /// 
+        /// 2: fecha_de_pago
+        /// 
+        /// 3: fecha_de_vencimiento
+        /// 
+        /// 4: monto
+        /// 
+        /// 5: pago tiene bonificacion
         /// 
         /// Posibles Error: NoSePoseenLosPermisosSuficientes
         #[ink(message)]
-        pub fn get_pagos(&self) -> Result<Vec<Pago>,Error>{
-            self.get_pagos_priv()
+        pub fn get_data_pagos(&self) -> Result<Vec<(u128,u128,Option<Timestamp>,Timestamp,u128,bool)>,Error>{
+            self.get_data_pagos_priv()
         }
-        fn get_pagos_priv(&self) -> Result<Vec<Pago>,Error>{
+        fn get_data_pagos_priv(&self) -> Result<Vec<(u128,u128,Option<Timestamp>,Timestamp,u128,bool)>,Error>{
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
+
+            let binding = self.get_pagos();
+            let Ok(data) = binding else {return Err(binding.err().unwrap())};
+
+            Ok( data.iter().map(|d| (d.id,d.socio_id,d.fecha_de_pago,d.fecha_de_vencimiento,d.monto,d.tiene_bonificacion)).collect())
+        }
+        /// METODO PRIVADO
+        /// 
+        /// Retorna todos los pagos que se han realizado al Club
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes
+        fn get_pagos(&self) -> Result<Vec<Pago>,Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
             let todos_los_pagos = self.pagos.get_or_default(); //CONSULTA: tambien podria ser self.pagos.get();
-            Ok(self.SLICE_O_PAGINACION_QUE_ES_ESO(todos_los_pagos))
+            Ok(todos_los_pagos)
         }
 
+
+
+        /// Dado el id de un socio, retorna una lista de la data de los pagos del mes y anio indicados de ese socio
+        /// 
+        /// La informacion del pago se retornara en el siguiente formato: 
+        /// 
+        /// 0: id unico que tiene en el club
+        /// 
+        /// 1: socio_id
+        /// 
+        /// 2: fecha_de_pago
+        /// 
+        /// 3: fecha_de_vencimiento
+        /// 
+        /// 4: monto
+        /// 
+        /// 5: pago tiene bonificacion
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, FechaInvalida
+        #[ink(message)]
+        pub fn get_data_pagos_del_mes_y_anio(&self, mes:i8, anio:i64) -> Result<Vec<(u128,u128,Option<Timestamp>,Timestamp,u128,bool)>,Error>{
+            self.get_data_pagos_del_mes_y_anio_priv(mes,anio)
+        } 
+        fn get_data_pagos_del_mes_y_anio_priv(&self, mes:i8, anio:i64) -> Result<Vec<(u128,u128,Option<Timestamp>,Timestamp,u128,bool)>,Error>{
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
+
+            let binding = Self::construir_fecha_midnight(anio,mes,1);
+            let Ok(mes_y_anio) = binding else {return Err(binding.err().unwrap())};
+
+            let binding = self.get_pagos_del_mes_y_anio(mes_y_anio);
+            let Ok(data) = binding else {return Err(binding.err().unwrap())};
+
+            Ok( data.iter().map(|d| (d.id,d.socio_id,d.fecha_de_pago,d.fecha_de_vencimiento,d.monto,d.tiene_bonificacion)).collect())
+        } 
+        /// METODO PRIVADO
+        /// 
         /// Retorna una lista de los pagos del mes y anio indicados
         /// 
         /// Si en la fecha no se realizaron pagos, se retornara una lista vacia
         /// 
         /// Posibles Error: NoSePoseenLosPermisosSuficientes
-        #[ink(message)]
-        pub fn get_pagos_del_mes_y_anio(&self,fecha:Timestamp) -> Result<Vec<Pago>,Error>{
-            self.get_pagos_del_mes_y_anio_priv(fecha)
-        }
-        fn get_pagos_del_mes_y_anio_priv(&self,fecha:Timestamp) -> Result<Vec<Pago>,Error>{
+        fn get_pagos_del_mes_y_anio(&self,mes_y_anio:LocalDateTime) -> Result<Vec<Pago>,Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
-            let fecha = LocalDateTime::at(fecha as i64);
-            let pagos_del_mes_y_anio = self.pagos.get_or_default().into_iter().filter(|p|
-                LocalDateTime::at(p.fecha_de_vencimiento as i64).date().month() == fecha.date().month() &&
-                LocalDateTime::at(p.fecha_de_vencimiento as i64).date().year() == fecha.date().year())      .collect();
+            let pagos_del_mes_y_anio = self.get_pagos().unwrap().into_iter().filter(|p|
+                LocalDateTime::at(p.fecha_de_vencimiento as i64).date().month() == mes_y_anio.date().month() &&
+                LocalDateTime::at(p.fecha_de_vencimiento as i64).date().year() == mes_y_anio.date().year())      .collect();
             Ok(pagos_del_mes_y_anio)
         }
+
+
+
+
         
-        /// Retorna la data de la categoria pasada por parametro
-        /// 
-        /// Posibles Error: CategoriaInvalida, CategoriaSinData
-        #[ink(message)]
-        pub fn get_categoria_data(&self,id_categoria: u32) -> Result<DatosCategoria,Error>{
-            self.get_categoria_data_priv(id_categoria)
-        }
-        fn get_categoria_data_priv(&self,id_categoria:u32) -> Result<DatosCategoria,Error>{
-            if !self.existe_categoria_id(id_categoria) {return Err(Error::CategoriaInvalida)}
-            if !self.categorias_data.contains(id_categoria) {return Err(Error::CategoriaSinData)}
-            
-            Ok(self.categorias_data.get(id_categoria).unwrap().clone())
-        }
 
-        /// Dado un socio ID, retorna su categoria
+
+        /// Dado el id de un socio, devuelve la data del primer pago sin acreditar
         /// 
-        /// TERMINAR: HACER LO MISMO PARA LOS DEMAS CAMPOS DE SOCIO
+        /// La informacion del pago se retornara en el siguiente formato: 
         /// 
-        /// Posibles Error: SocioNoRegistrado 
+        /// 0: id unico que tiene en el club
+        /// 
+        /// 1: socio_id
+        /// 
+        /// 2: fecha_de_pago
+        /// 
+        /// 3: fecha_de_vencimiento
+        /// 
+        /// 4: monto
+        /// 
+        /// 5: pago tiene bonificacion
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado, SocioNoPoseePagosSinAcreditar
         #[ink(message)]
-        pub fn categoria_de(&self,socio_id:u32)->Result<Categoria,Error>{ 
-            self.categoria_de_priv(socio_id)
+        pub fn get_data_primer_pago_sin_acreditar_del_socio_con_id(&self, socio_id:u128) -> Result<(u128,u128,Option<Timestamp>,Timestamp,u128,bool),Error>{
+            self.get_data_primer_pago_sin_acreditar_del_socio_con_id_priv(socio_id)
         } 
-        fn categoria_de_priv(&self,socio_id:u32)->Result<Categoria,Error>{ 
-            let Some(socio) = self.socios.get(socio_id) else {return Err(Error::SocioNoRegistrado)};
-            
-            Ok(socio.categoria)
+        fn get_data_primer_pago_sin_acreditar_del_socio_con_id_priv(&self, socio_id:u128) -> Result<(u128,u128,Option<Timestamp>,Timestamp,u128,bool),Error>{
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
+
+            let binding = self.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id);
+            let Ok(pago) = binding else {return Err(binding.err().unwrap())};
+
+            Ok((pago.id,pago.socio_id,pago.fecha_de_pago,pago.fecha_de_vencimiento,pago.monto,pago.tiene_bonificacion))
         } 
-
-        #[ink(message)]
-        pub fn todas_las_categorias_tienen_sus_datas_cargadas(&self) ->bool{
-            let mut res = true;
-            self.get_ids_categorias().into_iter().for_each(|c| res = res && self.get_categoria_data(c).is_ok() );
-            res
-        }
-
-        /// Devuelve el primer pago sin acreditar
+        /// METODO PRIVADO
+        ///         
+        /// Dado el id de un socio, devuelve el primer pago sin acreditar
         /// 
         /// Posibles Error: SocioNoRegistrado, SocioNoPoseePagosSinAcreditar
-        #[ink(message)]
-        pub fn get_primer_pago_sin_acreditar_del_socio_dni(&self, socio_dni:u32) -> Result<Pago,Error>{
-            let Some(socio) = self.get_socio_dni(socio_dni) else {return Err(Error::SocioNoRegistrado)};
-            let Some(pago) = self.get_primer_pago_sin_acreditar(socio.id) else {return Err(Error::SocioNoPoseePagosSinAcreditar)};
+        fn get_primer_pago_sin_acreditar_del_socio_con_id(&self, socio_id:u128) -> Result<Pago,Error>{
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
+            let Some(pago) = self.get_primer_pago_sin_acreditar(socio_id) else {return Err(Error::SocioNoPoseePagosSinAcreditar)};
             Ok(pago)
         } 
 
+
+
+
+
+
+        // ---------------------- SOBRE EL SOCIO ---------------------------
+
+
+        /// Dado un dni retorna el id del socio, si es que existe
+        #[ink(message)]
+        pub fn get_id_socio_con_dni(&self, un_dni:u32)->Option<u128>{
+            self.get_id_socio_con_dni_priv(un_dni)
+        }
+        fn get_id_socio_con_dni_priv(&self, un_dni:u32)->Option<u128>{
+            let len = self.mapping_lens.socios;
+            for i in 1..len+1{
+                let socio = self.socios.get(i).unwrap();
+                if socio.datos_personales.dni == un_dni {
+                    return Some(socio.id);
+                }
+            }
+            None
+        }
+
+        /// Dado un id, retorna la data del socio
+        /// 
+        /// La informacion se retornara en el siguiente formato: 
+        /// 
+        /// 0: nombre
+        /// 
+        /// 1: apellido
+        /// 
+        /// 2: dni
+        /// 
+        /// 3: id unico que tiene en el club
+        /// 
+        /// 4: categoria
+        /// 
+        /// Posibles Error: NoSePoseenLosPermisosSuficientes, SocioNoRegistrado
+        #[ink(message)]
+        pub fn get_data_socio_con_id(&self,socio_id:u128)->Result<(String,String,u32,u128,Categoria),Error>{
+            self.get_data_socio_con_id_priv(socio_id)
+        }
+        fn get_data_socio_con_id_priv(&self,socio_id:u128)->Result<(String,String,u32,u128,Categoria),Error>{
+            if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
+            
+            let socio = self.get_socio_con_id(socio_id).unwrap();
+            Ok((socio.datos_personales.nombre,socio.datos_personales.apellido,socio.datos_personales.dni,socio.id,socio.categoria))
+        }
+        /// METODO PRIVADO
+        /// 
+        /// Dado un id devuelve el socio, si es que existe
+        fn get_socio_con_id(&self,socio_id:u128)->Option<Socio>{
+            self.socios.get(socio_id)
+        }
+
+
+
+        /// Dado un socio ID, retorna su categoria
+        /// 
+        /// TERMINAR: BORRAR ESTE METODO, QUE LOS QUE LOS LLAMAN USEN get_id_socio_con_dni.categoria
+        /// 
+        /// Posibles Error: SocioNoRegistrado 
+        #[ink(message)]
+        pub fn categoria_de(&self,socio_id:u128)->Result<Categoria,Error>{ 
+            self.categoria_de_priv(socio_id)
+        } 
+        fn categoria_de_priv(&self,socio_id:u128)->Result<Categoria,Error>{ 
+            let Some(socio) = self.get_socio_con_id(socio_id) else {return Err(Error::SocioNoRegistrado)};
+            Ok(socio.categoria)
+        } 
+
+        
         /// Retorna true si el socio tiene permitida la asistencia a la actividad, false en caso contrario
         /// 
         /// Posibles Error: ActividadInvalida, SocioNoRegistrado, CategoriaSinData
+        /// 
+        /// TERMINAR: BORRAR METODO categoria_de()
         #[ink(message)]
-        pub fn socio_tiene_permitida_la_asistencia_a(&self, socio_id:u32,id_actividad: u32) -> Result<bool,Error>{
+        pub fn socio_tiene_permitida_la_asistencia_a(&self, socio_id:u128,id_actividad: u32) -> Result<bool,Error>{
             self.socio_tiene_permitida_la_asistencia_a_priv(socio_id,id_actividad)
         }
-        fn socio_tiene_permitida_la_asistencia_a_priv(&self, socio_id:u32,id_actividad: u32) -> Result<bool,Error>{
-            if !self.existe_actividad_id(id_actividad) {return Err(Error::ActividadInvalida)}
-            
+        fn socio_tiene_permitida_la_asistencia_a_priv(&self, socio_id:u128,id_actividad: u32) -> Result<bool,Error>{
+            if !self.existe_actividad_con_id(id_actividad) {return Err(Error::ActividadInvalida)}
+            if !self.existe_socio_con_id(socio_id) {return Err(Error::SocioNoRegistrado)}
+
             let binding = self.categoria_de(socio_id);
             let Ok(categoria) = binding else {return Err(binding.err().unwrap())};
             
@@ -774,32 +1200,116 @@ mod registro_de_pagos_club_sem_rust {
                 _ => {}
             }
 
-            let binding = self.get_categoria_data(categoria.discriminant());
+            let binding = self.get_categoria_datos(categoria.discriminant());
             let Ok(categoria_data) = binding else {return Err(binding.err().unwrap())};
 
-            let binding = categoria_data.actividades_accesibles_base();
+            let binding = categoria_data.actividades_accesibles_base;
             let res = binding.iter().find(|a|a.clone().clone() as u32 == id_actividad);
 
             Ok(res.is_some())
         }
-        
 
+
+
+        // Dado un ID, retorna true si existe un socio con ese id 
+        #[ink(message)]
+        pub fn existe_socio_con_id(&self, socio_id:u128) -> bool{
+            self.existe_socio_con_id_priv(socio_id)
+        }
+        fn existe_socio_con_id_priv(&self, socio_id:u128) -> bool{
+            self.socios.contains(socio_id)
+        }
+
+        /// Retorna true si el socio con el dni pasado por parametro es un socio del club, false en caso contrario 
+        #[ink(message)]
+        pub fn existe_socio_dni(&self,un_dni:u32)->bool{
+            self.existe_socio_dni_priv(un_dni)
+        }
+        fn existe_socio_dni_priv(&self,un_dni:u32)->bool{
+            self.get_id_socio_con_dni(un_dni).is_some()
+        }
     }
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // CONSULTAR: 
-        // 1- Como hacemos para saber la longitud de un enum?
+        // 1- 
     // TERMINAR:
-        // 1- hacer los getters para todos los campos de un socio, que reciban un socio_id. Para obtener el socio_id_es con el dni
-        // 2- Cuando se reciben enums chequear que no se haya elegido "Cantidad", ya que no es una opcion valida 
-        // 3- Chequear que la confirmacion de los permisos esta en todos los metodos
-        // 4- Fijarse si cuando se usa get_socio_dni, se usa solo para obtener el ID. CAMBIARLO A OBTENER EL ID Y HACERLO PUBLICO, PARA OBTENER EL SOCIO CON EL ID SE OBTIENE
+        // 2- Chequear que la confirmacion de los permisos esta en todos los metodos
+        // 3- SOBRE LOS TESTS: ARREGLER, TERMINAR, CHEQUEAR QUE SE PASAN LOS IDS Y NO LOS DNIS
+        // 4- reemplazar 604800 por -> 10*(constante cantidad_segundos_por_dia)
+        // 5- Arreglar todos los tests
+
+
+
 
 /// Module ink_env::test -> https://paritytech.github.io/ink/ink_env/test/index.html
 /// Examples -> https://github.com/paritytech/ink-examples/blob/main/erc20/lib.rs
     #[cfg(test)]
     mod tests {
-        use datetime::Month;
 
         /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
@@ -846,13 +1356,13 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.cargar_data_categoria(Categoria::A, 5000, vec_de_actividades_a.clone()).is_ok());
 
             // chequeamos si los datos se guardaron correctamente en la categoria a
-            let categoria_data_a = club.get_categoria_data(Categoria::A.discriminant());
+            let categoria_data_a = club.get_data_categoria_datos(Categoria::A.discriminant());
             
             assert!(categoria_data_a.is_ok());
             let categoria_data_a = categoria_data_a.unwrap();
-            assert_eq!((categoria_data_a.actividades_accesibles_base()),vec_de_actividades_a);
-            assert_eq!(categoria_data_a.id(),Categoria::A.discriminant());
-            assert_eq!(categoria_data_a.costo_mensual_en_tokens(),5000);
+            assert_eq!((categoria_data_a.2),vec_de_actividades_a);
+            assert_eq!(categoria_data_a.0,Categoria::A.discriminant());
+            assert_eq!(categoria_data_a.1,5000);
 
 
             // se crea y carga la categoria b
@@ -862,13 +1372,13 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.cargar_data_categoria(Categoria::B { deporte_seleccionado_por_el_usuario:Actividad::default() }, 3000, vec_de_actividades_b.clone()).is_ok());
 
             // chequeamos si los datos se guardaron correctamente en la categoria b
-            let categoria_data_b = club.get_categoria_data(Categoria::B { deporte_seleccionado_por_el_usuario:Actividad::default() }.discriminant());
+            let categoria_data_b = club.get_data_categoria_datos(Categoria::B { deporte_seleccionado_por_el_usuario:Actividad::default() }.discriminant());
                         
             assert!(categoria_data_b.is_ok());
             let categoria_data_b = categoria_data_b.unwrap();
-            assert_eq!((categoria_data_b.actividades_accesibles_base()),vec_de_actividades_b);
-            assert_eq!(categoria_data_b.id(),Categoria::B { deporte_seleccionado_por_el_usuario:Actividad::default()}.discriminant());
-            assert_eq!(categoria_data_b.costo_mensual_en_tokens(),3000);
+            assert_eq!((categoria_data_b.2),vec_de_actividades_b);
+            assert_eq!(categoria_data_b.0,Categoria::B { deporte_seleccionado_por_el_usuario:Actividad::default()}.discriminant());
+            assert_eq!(categoria_data_b.1,3000);
 
 
             // se crea y carga la categoria c
@@ -877,13 +1387,13 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.cargar_data_categoria(Categoria::C,2000,vec_de_actividades_c.clone()).is_ok());
 
             // chequeamos si los datos se guardaron correctamente en la categoria c
-            let categoria_data_c = club.get_categoria_data(Categoria::C.discriminant());
+            let categoria_data_c = club.get_data_categoria_datos(Categoria::C.discriminant());
             
             assert!(categoria_data_c.is_ok());
             let categoria_data_c = categoria_data_c.unwrap();
-            assert_eq!((categoria_data_c.actividades_accesibles_base()),vec_de_actividades_c);
-            assert_eq!(categoria_data_c.id(),Categoria::C.discriminant());
-            assert_eq!(categoria_data_c.costo_mensual_en_tokens(),2000);
+            assert_eq!((categoria_data_c.2),vec_de_actividades_c);
+            assert_eq!(categoria_data_c.0,Categoria::C.discriminant());
+            assert_eq!(categoria_data_c.1,2000);
 
             assert!(club.todas_las_categorias_tienen_sus_datas_cargadas());
         }
@@ -912,20 +1422,20 @@ mod registro_de_pagos_club_sem_rust {
         }
         
         #[ink::test]
-        fn test_existe_actividad_id () {
+        fn test_existe_actividad_con_id () {
             let club = crear_club_sem_rust();
-            assert!(club.existe_actividad_id(Actividad::Basquet as u32));
-            assert!(club.existe_actividad_id(Actividad::Natacion as u32));
-            assert!(club.existe_actividad_id(Actividad::Futbol as u32));
-            assert!(!club.existe_actividad_id(800));
+            assert!(club.existe_actividad_con_id(Actividad::Basquet as u32));
+            assert!(club.existe_actividad_con_id(Actividad::Natacion as u32));
+            assert!(club.existe_actividad_con_id(Actividad::Futbol as u32));
+            assert!(!club.existe_actividad_con_id(800));
         }
         #[ink::test]
-        fn test_existe_categoria_id (){
+        fn test_existe_categoria_con_id (){
             let club = crear_club_sem_rust();
-            assert!(club.existe_categoria_id(Categoria::A.discriminant()));
-            assert!(club.existe_categoria_id(Categoria::B{deporte_seleccionado_por_el_usuario: Actividad::default()}.discriminant()));
-            assert!(club.existe_categoria_id(Categoria::C.discriminant()));
-            assert!(!club.existe_categoria_id(800));
+            assert!(club.existe_categoria_con_id(Categoria::A.discriminant()));
+            assert!(club.existe_categoria_con_id(Categoria::B{deporte_seleccionado_por_el_usuario: Actividad::default()}.discriminant()));
+            assert!(club.existe_categoria_con_id(Categoria::C.discriminant()));
+            assert!(!club.existe_categoria_con_id(800));
         }
         
         #[ink::test]
@@ -1070,11 +1580,11 @@ mod registro_de_pagos_club_sem_rust {
             assert!(!club.tengo_permisos_suficientes_para_realizar_operaciones());
         }
         #[ink::test]
-        fn test_set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(){
+        fn test_set_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(){
             let mut club = crear_club_sem_rust();
             let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
 
-            assert!(club.set_cant_pagos_consecutivos_sin_atrasos_necesarios_paga_descuento(5).is_ok());
+            assert!(club.set_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(5).is_ok());
             assert_eq!(club.get_cant_pagos_consecutivos_sin_atrasos_necesarios_para_descuento(),5);
         }
         #[ink::test]
@@ -1088,33 +1598,31 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.actualizacion_mensual().is_ok());
         }
         #[ink::test]
-        fn test_get_pagos(){
+        fn test_get_data_pagos(){ 
             let mut club=crear_club_sem_rust();
             crear_y_cargar_categorias(&mut club);
             let dni1 = 90;
             let dni2=30;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni1, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Perri".to_string(),dni2, Categoria::C).is_ok());
-            let pagos_totales=club.get_pagos();
+            let id1 = club.get_id_socio_con_dni(dni1).unwrap();
+            let id2 = club.get_id_socio_con_dni(dni2).unwrap();
+            let pagos_totales=club.get_data_pagos();
             let mut pagos_totales_manual=Vec::new();
-            pagos_totales_manual.push(club.get_pagos_de(dni1).unwrap().pop().unwrap());
-            pagos_totales_manual.push(club.get_pagos_de(dni2).unwrap().pop().unwrap());
+            pagos_totales_manual.push(club.get_data_pagos_del_socio_con_id(id1).unwrap().pop().unwrap());
+            pagos_totales_manual.push(club.get_data_pagos_del_socio_con_id(id2).unwrap().pop().unwrap());
             assert_eq!(pagos_totales.unwrap(),pagos_totales_manual);
         }
-        /*id:u32,
-        socio_id: u32,
-        fecha_de_pago:Option<Timestamp>,
-        fecha_de_vencimiento:Timestamp,
-        monto:u128,
-        tiene_bonificacion:bool */
         #[ink::test]
-        fn test_get_pagos_de(){
+        fn test_get_data_pagos_del_socio_con_id(){
             let mut club=crear_club_sem_rust();
             crear_y_cargar_categorias(&mut club);
             let dni1 = 90;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni1, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
-            let pago_de_charlie=club.get_pagos_de(dni1).unwrap();
-            let pago_de_charlie_manual=club.get_pagos().unwrap();
+            let id1 = club.get_id_socio_con_dni(dni1).unwrap();
+            
+            let pago_de_charlie=club.get_data_pagos_del_socio_con_id(id1).unwrap();
+            let pago_de_charlie_manual=club.get_data_pagos().unwrap();
             assert_eq!(pago_de_charlie,pago_de_charlie_manual)
         }
         #[ink::test]
@@ -1128,7 +1636,7 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.soy_duenio());
         }
         #[ink::test]
-        fn test_get_pagos_del_mes_y_anio(){
+        fn test_get_data_pagos_del_mes_y_anio(){
             let mut club=crear_club_sem_rust();
             crear_y_cargar_categorias(&mut club);
 
@@ -1140,54 +1648,59 @@ mod registro_de_pagos_club_sem_rust {
 
             let dni1 = 90;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni1, Categoria::A).is_ok());
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni1).unwrap().id,mes_y_anio_de_venicimiento_buscados)).is_ok());
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni1).unwrap().id,fecha_de_vencimiento_no_buscada)).is_ok());
+            let id1 = club.get_id_socio_con_dni(dni1).unwrap();
+
+            assert!((club.crear_cuota_para_socio(id1,mes_y_anio_de_venicimiento_buscados)).is_ok());
+            assert!((club.crear_cuota_para_socio(id1,fecha_de_vencimiento_no_buscada)).is_ok());
             
             let dni2 = 57;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni2, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni2).unwrap().id,mes_y_anio_de_venicimiento_buscados)).is_ok());
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni2).unwrap().id,fecha_de_vencimiento_no_buscada)).is_ok());
+            let id2 = club.get_id_socio_con_dni(dni2).unwrap();
+            assert!((club.crear_cuota_para_socio(id2,mes_y_anio_de_venicimiento_buscados)).is_ok());
+            assert!((club.crear_cuota_para_socio(id2,fecha_de_vencimiento_no_buscada)).is_ok());
 
             let pagos_del_club=club.get_pagos().unwrap();
-            let pagos_anio_y_mes = club.get_pagos_del_mes_y_anio(mes_y_anio_de_venicimiento_buscados.to_instant().seconds() as u64).unwrap();
+            let pagos_anio_y_mes = club.get_data_pagos_del_mes_y_anio(10,2021).unwrap();
             assert_eq!(pagos_anio_y_mes, 
-                        pagos_del_club.into_iter().filter(|p|
+                                        pagos_del_club.into_iter().filter(|p|
                                             LocalDateTime::at(p.fecha_de_vencimiento as i64).date().month() == mes_y_anio_de_venicimiento_buscados.date().month() &&
-                                            LocalDateTime::at(p.fecha_de_vencimiento as i64).date().year() == mes_y_anio_de_venicimiento_buscados.date().year()) .collect::<Vec<Pago>>()
+                                            LocalDateTime::at(p.fecha_de_vencimiento as i64).date().year() == mes_y_anio_de_venicimiento_buscados.date().year()) 
+                                                .map(|d| (d.id,d.socio_id,d.fecha_de_pago,d.fecha_de_vencimiento,d.monto,d.tiene_bonificacion)).collect::<Vec<(u128, u128, Option<u64>, u64, u128, bool)>>()
                                         );
         }
         #[ink::test]
-        fn test_get_primer_pago_sin_acreditar_y_registrar_nuevo_pago(){
+        fn test_get_data_primer_pago_sin_acreditar_del_socio_con_id_y_registrar_nuevo_pago(){
             let mut club = crear_club_sem_rust();
             let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
             crear_y_cargar_categorias(&mut club);
             
-            let dni = 75;
+            let dni1 = 75;
             // al registrar un nuevo socio se le crea una cuota sin pagar
-            assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
+            assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni1, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
+            let id1 = club.get_id_socio_con_dni(dni1).unwrap();
             
             // obtengo el primer pago sin pagar. Ya que no paso un mes desde la creacion del club, no se creara otra cuota
-            let pago = club.get_primer_pago_sin_acreditar_del_socio_dni(dni);
+            let pago = club.get_data_primer_pago_sin_acreditar_del_socio_con_id(id1);
             assert!(pago.is_ok());
             let pago = pago.unwrap();
             // pagos_del_usuario_originales contiene el primer pago sin pagar.
             let pagos_del_usuario_originales = vec![pago.clone()];
-            assert_eq!(club.get_pagos_de(dni).unwrap(),pagos_del_usuario_originales);
-            assert!(club.registrar_nuevo_pago(dni, pago.monto()).is_ok());
+            assert_eq!(club.get_data_pagos_del_socio_con_id(id1).unwrap(),pagos_del_usuario_originales);
+            assert!(club.registrar_nuevo_pago(id1, pago.4).is_ok());
             // Si registrar_nuevo_pago() funciona correctamente, luego de ejecutarlo no deverian ser iguales
-            assert_ne!(club.get_pagos_de(dni).unwrap(),pagos_del_usuario_originales);
+            assert_ne!(club.get_data_pagos_del_socio_con_id(id1).unwrap(),pagos_del_usuario_originales);
 
             // no tendria que tener pagos sin pagar
-            assert_eq!(club.get_primer_pago_sin_acreditar_del_socio_dni(dni).err().unwrap(),Error::SocioNoPoseePagosSinAcreditar);
+            assert_eq!(club.get_data_primer_pago_sin_acreditar_del_socio_con_id(id1).err().unwrap(),Error::SocioNoPoseePagosSinAcreditar);
 
-            let pagos =club.get_pagos_de(dni);
+            let pagos =club.get_data_pagos_del_socio_con_id(id1);
             assert!(pagos.is_ok());
             let pagos = pagos.unwrap();
             // hay un solo pago de ese usuario
             assert_eq!(pagos.len(),1);
             let pago = &pagos[0];
             // el pago tendria que tener fecha de pago
-            assert!(pago.fecha_de_pago().is_some());
+            assert!(pago.2.is_some());
         }
 
         #[ink::test]
@@ -1197,11 +1710,12 @@ mod registro_de_pagos_club_sem_rust {
             crear_y_cargar_categorias(&mut club);
             let dni = 8;
             club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::C);
+            let id1 = club.get_id_socio_con_dni(dni).unwrap();
 
             let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni).unwrap().id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
+            assert!((club.crear_cuota_para_socio(id1,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             
-            let pagos =club.get_pagos_de(dni);
+            let pagos =club.get_pagos_del_socio_con_id(id1);
             assert!(pagos.is_ok());
             let pagos = pagos.unwrap();
             // hay 2 pagos de ese usuario
@@ -1209,13 +1723,13 @@ mod registro_de_pagos_club_sem_rust {
             let pago0 = &pagos[0];
             let pago1 = &pagos[1];
 
-            assert_eq!(pago1.id(),1);
-            assert_eq!(pago1.socio_id(),1);
-            assert!(pago1.fecha_de_pago().is_none());
-            assert_eq!(pago1.fecha_de_vencimiento(),fecha_de_vencimiento as u64);
-            assert!(!pago1.tiene_bonificacion());
-            let monto = club.get_categoria_data(Categoria::C.discriminant()).unwrap().costo_mensual_en_tokens();
-            assert_eq!(pago1.monto(),monto);
+            assert_eq!(pago1.id,1);
+            assert_eq!(pago1.socio_id,1);
+            assert!(pago1.fecha_de_pago.is_none());
+            assert_eq!(pago1.fecha_de_vencimiento,fecha_de_vencimiento as u64);
+            assert!(!pago1.tiene_bonificacion);
+            let monto = club.get_categoria_datos(Categoria::C.discriminant()).unwrap().costo_mensual_en_tokens;
+            assert_eq!(pago1.monto,monto);
         }
         #[ink::test]
         fn test_socio_cumple_las_condiciones_para_obtener_la_bonificacion(){
@@ -1229,60 +1743,60 @@ mod registro_de_pagos_club_sem_rust {
             let dni = 75;
             // al registrar un nuevo socio se le crea una cuota sin pagar
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
-            let socio_id = club.get_socio_dni(dni).unwrap().id;
+            let socio_id = club.get_id_socio_con_dni(dni).unwrap();
             
             assert_eq!(club.pagos.get_or_default().len(),1);
 
             // no tiene bonificacion todavia
-            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id));
+            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
             // paga la primer cuota al dia
-            let pago = club.get_primer_pago_sin_acreditar_del_socio_dni(dni).unwrap();
-            assert!(!pago.tiene_bonificacion());
-            assert!(!club.pago_esta_vencido(&pago));
-            assert!(club.registrar_nuevo_pago(dni, pago.monto()).is_ok());
-            assert!(!club.pago_esta_vencido(&pago));
+            let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
+            assert!(!pago.tiene_bonificacion);
+            assert!(!club.pago_esta_vencido(pago.id).unwrap());
+            assert!(club.registrar_nuevo_pago(socio_id, pago.monto).is_ok());
+            assert!(!club.pago_esta_vencido(pago.id).unwrap());
 
             // no tiene bonificacion todavia
-            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id));
+            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
             // se le agregan 2 cuotas y las paga al dia
             let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni).unwrap().id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
+            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),2);
-            let pago = club.get_primer_pago_sin_acreditar_del_socio_dni(dni).unwrap();
-            assert!(!pago.tiene_bonificacion());
-            //assert!(!club.pago_esta_vencido(&pago));
-            assert!(club.registrar_nuevo_pago(dni, pago.monto()).is_ok());
-            assert!(!club.pago_esta_vencido(&pago));
+            let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
+            assert!(!pago.tiene_bonificacion);
+            //assert!(!club.pago_esta_vencido(pago.id).unwrap());
+            assert!(club.registrar_nuevo_pago(socio_id, pago.monto).is_ok());
+            assert!(!club.pago_esta_vencido(pago.id).unwrap());
 
             // no tiene bonificacion todavia
-            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id));
+            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
             let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni).unwrap().id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
+            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),3);
-            let pago = club.get_primer_pago_sin_acreditar_del_socio_dni(dni).unwrap();
-            assert!(!pago.tiene_bonificacion());
-            assert!(!club.pago_esta_vencido(&pago));
-            assert!(club.registrar_nuevo_pago(dni, pago.monto()).is_ok());
-            assert!(!club.pago_esta_vencido(&pago));
+            let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
+            assert!(!pago.tiene_bonificacion);
+            assert!(!club.pago_esta_vencido(pago.id).unwrap());
+            assert!(club.registrar_nuevo_pago(socio_id, pago.monto).is_ok());
+            assert!(!club.pago_esta_vencido(pago.id).unwrap());
 
             // Ya que pago 3 cuotas sin que alguna se venciese, le corresponde bonificacion
-            assert!(club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id));
+            assert!(club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
             
             // se le agrega otra cuota (esta tiene bonificacion) y la paga al dia
             let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(club.get_socio_dni(dni).unwrap().id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
+            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),4);
-            let pago = club.get_primer_pago_sin_acreditar_del_socio_dni(dni).unwrap();
-            assert!(pago.tiene_bonificacion());
-            assert!(!club.pago_esta_vencido(&pago));
-            assert!(club.registrar_nuevo_pago(dni, pago.monto()).is_ok());
-            assert!(!club.pago_esta_vencido(&pago));
+            let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
+            assert!(pago.tiene_bonificacion);
+            assert!(!club.pago_esta_vencido(pago.id).unwrap());
+            assert!(club.registrar_nuevo_pago(socio_id, pago.monto).is_ok());
+            assert!(!club.pago_esta_vencido(pago.id).unwrap());
 
             // aunque haya pagado 4 cuotas seguidas con al dia, ya que obtuvo bonificacion recientemente, no le corresponde bonificacion
-            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id));
+            assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
         }
         #[ink::test]
@@ -1291,7 +1805,7 @@ mod registro_de_pagos_club_sem_rust {
             crear_y_cargar_categorias(&mut club);
             let dni = 47;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::A).is_ok());
-            let socio_id = club.get_socio_dni(dni).unwrap().id;
+            let socio_id = club.get_id_socio_con_dni(dni).unwrap();
             assert!(club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Gimnasio as u32).unwrap());
             assert!(club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Futbol as u32).unwrap());
             assert!(club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Basquet as u32).unwrap());
@@ -1307,7 +1821,7 @@ mod registro_de_pagos_club_sem_rust {
             crear_y_cargar_categorias(&mut club);
             let dni = 47;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
-            let socio_id = club.get_socio_dni(dni).unwrap().id;
+            let socio_id = club.get_id_socio_con_dni(dni).unwrap();
             assert!(club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Gimnasio as u32).unwrap());
             assert!(club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Futbol as u32).unwrap());
             assert!(!club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Basquet as u32).unwrap());
@@ -1323,7 +1837,7 @@ mod registro_de_pagos_club_sem_rust {
             crear_y_cargar_categorias(&mut club);
             let dni = 47;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::C).is_ok());
-            let socio_id = club.get_socio_dni(dni).unwrap().id;
+            let socio_id = club.get_id_socio_con_dni(dni).unwrap();
             assert!(club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Gimnasio as u32).unwrap());
             assert!(!club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Futbol as u32).unwrap());
             assert!(!club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Basquet as u32).unwrap());
@@ -1332,6 +1846,87 @@ mod registro_de_pagos_club_sem_rust {
             assert!(!club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Paddle as u32).unwrap());
             assert!(!club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Rugby as u32).unwrap());
             assert!(!club.socio_tiene_permitida_la_asistencia_a(socio_id,Actividad::Tenis as u32).unwrap());
+        }
+        #[ink::test]
+        fn test_get_data_socio_con_id(){ 
+            let mut club=crear_club_sem_rust();
+            crear_y_cargar_categorias(&mut club);
+            let dni1 = 90;
+            let dni2=30;
+            assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni1, Categoria::A).is_ok());
+            assert!(club.registrar_nuevo_socio("charlie".to_string(),"Perri".to_string(),dni2, Categoria::C).is_ok());
+            let id1 = club.get_id_socio_con_dni(dni1).unwrap();
+            let id2 = club.get_id_socio_con_dni(dni2).unwrap();
+            
+            let data_socio1=club.get_data_socio_con_id(id1);
+            assert!(data_socio1.is_ok());
+            let data_socio1 = data_socio1.unwrap();
+
+            let data_socio2=club.get_data_socio_con_id(id2);
+            assert!(data_socio2.is_ok());
+            let data_socio2 = data_socio2.unwrap();
+
+            assert_eq!(data_socio1,("charlie".to_string(), "Ricciardi".to_string(), dni1, id1, Categoria::A));
+            assert_eq!(data_socio2,("charlie".to_string(), "Perri".to_string(), dni2, id2, Categoria::C));
+        }
+        #[ink::test]
+        fn test_construir_fecha_midnight(){
+            assert!(ClubSemRust::construir_fecha_midnight(2000, 90, 8).is_err());
+            assert!(ClubSemRust::construir_fecha_midnight(2000, 9, 80).is_err());
+
+            assert_eq!(ClubSemRust::construir_fecha_midnight(2000, 4, 1).unwrap(), 
+                                                                        LocalDateTime::new(
+                                                                            LocalDate::ymd(2000,Month::from_one(4).unwrap(),1).unwrap(),  
+                                                                            LocalTime::midnight() 
+                                                                                )
+                        );
+        }
+        #[ink::test]
+        fn test_get_actividad_id (){
+            let mut club=crear_club_sem_rust();
+            assert_eq!(club.get_actividad_id(Actividad::Natacion),Actividad::Natacion as u32)
+        }
+        #[ink::test]
+        fn test_get_categoria_id  (){
+            let mut club=crear_club_sem_rust();
+            assert_eq!(club.get_categoria_id (Categoria::C),Categoria::C.discriminant())
+        }
+        #[ink::test]
+        fn test_registrar_nuevo_pago_ajecuta_actualizacion_mensual_y_da_ok  (){
+            // para corroborar esto hay que seguir el html
+            // lo que se hace es simil "test_actualizacion_mensual", como para que al ejecutar actualizacion mensual en registrar_nuevo_pago, retorne Ok
+            let mut club=crear_club_sem_rust();
+            crear_y_cargar_categorias(&mut club);
+            club.fecha_de_la_ultima_actualizacion-= 2678400;
+
+            let dni = 75;
+            assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
+            let socio_id = club.get_id_socio_con_dni(dni).unwrap();
+
+            let fecha_de_vencimiento =  LocalDateTime::now().to_instant().seconds() + 604800;
+            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64))).is_ok());
+            let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
+            assert!(club.registrar_nuevo_pago(socio_id, pago.monto).is_ok());
+        }
+        #[ink::test]
+        fn test_actualizacion_mensual_falla_en_crear_cuota_para_socio() {
+            let mut club=crear_club_sem_rust();
+            assert_eq!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),50, Categoria::C).err().unwrap(),Error::CategoriaSinData);
+
+            // Si no se carga la data de la categoria no se permite agregar un nuevo socio, acualizacion mensual retorna Ok(), pero sin crear ninguna cuota
+            club.fecha_de_la_ultima_actualizacion-= 2678400;
+            assert!(club.actualizacion_mensual().is_ok());
+            assert_eq!(club.get_pagos().unwrap().len(),0);
+
+            // creo un socio manualmente, sin cargar las datas de las categorias (esto es imposible de hacerlo desde afuera)
+
+            let info_personal_del_socio=DatosPersonalesSocio{nombre:"charlie".to_string(),apellido:"Perri".to_string(),dni:90};
+            let socio=Socio{id:club.nueva_id(TipoId::Socio),categoria:Categoria::C,datos_personales:info_personal_del_socio};
+            club.socios.insert(socio.id, &socio);
+
+            // ya que la categoria del socio no tiene su data cargada, al llamar crear_cuota_para_socio dentro de actualizacion_mensual, saltara el error
+            club.fecha_de_la_ultima_actualizacion-= 2678400;
+            assert_eq!(club.actualizacion_mensual().err().unwrap(),Error::CategoriaSinData)
         }
     }
 }
