@@ -1,0 +1,3 @@
+cargo:rerun-if-changed=build/main.rs
+cargo:rustc-env=TYPENUM_BUILD_CONSTS=C:\Users\NICOLAS\desktop\2023\Primer Semestre\Rust\Rust_TpFinal\registro_de_pagos_club_sem_rust\target\ink\release\build\typenum-a3fe7c92a408d4ad\out\consts.rs
+cargo:rustc-env=TYPENUM_BUILD_OP=C:\Users\NICOLAS\desktop\2023\Primer Semestre\Rust\Rust_TpFinal\registro_de_pagos_club_sem_rust\target\ink\release\build\typenum-a3fe7c92a408d4ad\out\op.rs
