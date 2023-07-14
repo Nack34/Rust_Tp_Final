@@ -1,8 +1,12 @@
 {
   "source": {
+<<<<<<< Updated upstream
     "hash": "0x76c323067a4eb2cf46a230233ef8b125dd7f2fd79c09aba07a39d8ebf4b90c12",
+=======
+    "hash": "0x14da4f5fc64ef01b9bec32202b9c0a02690c9e2f468d850d8fea5665f102ff6c",
+>>>>>>> Stashed changes
     "language": "ink! 4.2.1",
-    "compiler": "rustc 1.68.2",
+    "compiler": "rustc 1.69.0",
     "build_info": {
       "build_mode": "Debug",
       "cargo_contract_version": "3.0.1",
