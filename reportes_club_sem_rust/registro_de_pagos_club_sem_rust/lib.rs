@@ -4,10 +4,15 @@ pub use self::registro_de_pagos_club_sem_rust::ClubSemRustRef;
 #[ink::contract]
 mod registro_de_pagos_club_sem_rust {
 
+    
+
+    use ink::env::block_timestamp;
     use ink::storage::Mapping;
     use ink::prelude::string::String;
     use ink::prelude::vec::Vec;
     use ink::storage::Lazy;
+
+
 
     // https://docs.rs/strum_macros/0.25.1/strum_macros/index.html
     //use strum::EnumCount;
@@ -39,23 +44,29 @@ mod registro_de_pagos_club_sem_rust {
         pub fn to_instant(&self) -> LocalDateTime{
             self.clone()
         }
-        pub fn seconds(&self) -> Timestamp{
-            self.local_date.cant_segundos() + self.local_time.segundos as u64 
+        pub fn to_miliseconds(&self) -> Timestamp{
+            self.local_date.cant_milisegundos() + self.local_time.milisegundos as u64
         }
         pub fn local_date_time_del_inicio_del_time_stamp()->LocalDateTime{
             LocalDateTime { local_date:LocalDate{year:1970,month:Month::January,day:1},local_time: LocalTime::midnight() }
         }
-        pub fn at(seconds_since_1970:i64)-> LocalDateTime{
-            Self::local_date_time_del_inicio_del_time_stamp().add_seconds(seconds_since_1970 as u128)
+        pub fn at(miliseconds_since_1970:i64)-> LocalDateTime{
+            let mut local_date_time_resultante=Self::local_date_time_del_inicio_del_time_stamp();
+            local_date_time_resultante.add_miliseconds(miliseconds_since_1970 as u128) 
+            
         }
         pub fn date(&self)-> LocalDate{
             self.local_date.clone()
         }
-        pub fn add_seconds(&mut self,seconds:u128) -> Self{
-            let cant_dias=(seconds/86400) as u32;
-            let cant_segundos: u32= (seconds % 86400) as u32; // 86400 cantidad de segundos en un dia
+        pub fn add_miliseconds(&mut self,seconds:u128) -> Self{
+            let mut cant_dias: u32= (seconds / 86_400_000) as u32; // 86_400_000 cantidad de milisegundos en un dia
+            let mut cant_milisegundos: u32= (seconds % 86_400_000) as u32; // 86_400_000 cantidad de milisegundos en un dia
+            if (self.local_time.milisegundos+cant_milisegundos>=86_400_000) {
+                cant_dias+=1;
+                cant_milisegundos=self.local_time.milisegundos+cant_milisegundos-86_400_000;
+            }
             self.local_date.sumar_dias(cant_dias);
-            self.local_time.segundos+=cant_segundos; 
+            self.local_time.milisegundos+=cant_milisegundos;
             self.clone()
         }
     }
@@ -127,33 +138,17 @@ mod registro_de_pagos_club_sem_rust {
         }
         fn sumar_dias(&mut self,dias:u32){
             for _i in 0..dias {
-                *self = self.next_date() ;
+                self.day+=1;
+                self.chequear_carry();
             }
         }
-        fn next_date(self) ->Self{
-            if self.year == 9999 && self.month == Month::December && self.day == 31 {
-                return self;
-            }
-            if self.day == Self::max_dia(self.year,self.month) {
-                if self.month ==Month::December {
-                    LocalDate {
-                        year: self.year + 1,
-                        month: Month::January,
-                        day: 1,
-                    }
-                } else {
-                    LocalDate {
-                        year: self.year,
-                        month: Self::prox_mes(self.month).unwrap(),
-                        day: 1,
-                    }
+        fn chequear_carry(&mut self){
+            if !Self::es_fecha_valida(self.year,self.month.clone(),self.day) {
+                if !self.inc_mes().is_ok(){
+                    self.month=Month::January;
+                    self.year+=1;
                 }
-            } else {
-                LocalDate {
-                    year: self.year,
-                    month: self.month,
-                    day: self.day + 1,
-                }
+                self.day = 1;
             }
         }
         fn max_dia(anio:i64,mes:Month) -> i8{ 
@@ -163,22 +158,22 @@ mod registro_de_pagos_club_sem_rust {
                 Month::April|Month::June|Month::September|Month::November=>30,
             }   
         }
-        fn prox_mes(month:Month) -> Result<Month,()>{
-            match month{
-                Month::January => {Ok(Month::February)} 
-                Month::February => {Ok(Month::March)} 
-                Month::March => {Ok(Month::April)} 
-                Month::April => {Ok(Month::May)} 
-                Month::May => {Ok(Month::June)} 
-                Month::June => {Ok(Month::July)} 
-                Month::July => {Ok(Month::August)} 
-                Month::August => {Ok(Month::September)} 
-                Month::September => {Ok(Month::October)} 
-                Month::October => {Ok(Month::November)} 
-                Month::November => {Ok(Month::December)} 
+        fn inc_mes(&mut self) -> Result<(),()>{
+            match self.month{
+                Month::January => {self.month =Month::February} 
+                Month::February => {self.month =Month::March} 
+                Month::March => {self.month =Month::April} 
+                Month::April => {self.month =Month::May} 
+                Month::May => {self.month =Month::June} 
+                Month::June => {self.month =Month::July} 
+                Month::July => {self.month =Month::August} 
+                Month::August => {self.month =Month::September} 
+                Month::September => {self.month =Month::October} 
+                Month::October => {self.month =Month::November} 
+                Month::November => {self.month =Month::December} 
                 Month::December => {return Err(())} 
             }
-            
+            Ok(())
         }
         fn mes_ant(month:Month) -> Result<Month,()>{
             match month{
@@ -196,9 +191,9 @@ mod registro_de_pagos_club_sem_rust {
                 Month::December => {Ok(Month::November)} 
             }
         }
-        pub fn cant_segundos(&self) ->Timestamp{
-            let segundos_en_un_dia = 86400; 
-            self.cant_dias() * segundos_en_un_dia
+        pub fn cant_milisegundos(&self) ->Timestamp{
+            let milisegundos_en_un_dia = 86_400_000; 
+            self.cant_dias() * milisegundos_en_un_dia
         }
         fn cant_dias(&self) -> u64{
             self.cant_dias_rec(self.cantidad_de_meses(),self.year,self.month.clone(),self.day as u64) -1
@@ -223,11 +218,11 @@ mod registro_de_pagos_club_sem_rust {
     #[derive(scale::Decode, scale::Encode,Debug,Clone,PartialEq,PartialOrd,Copy)]
     #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
     struct LocalTime{
-        segundos:u32,
+        milisegundos:u32,
     }
     impl LocalTime{
         pub fn midnight() -> LocalTime{
-            LocalTime{segundos:0}
+            LocalTime{milisegundos:0}
         }
     }
 
@@ -490,7 +485,7 @@ mod registro_de_pagos_club_sem_rust {
         categorias_data:Mapping<u32,DatosCategoria>,
 
         /// Todos los pagos realizados
-        pagos:Lazy<Vec<Pago>>,
+        pagos:Lazy<Vec<Pago>>, // CONSULTAR: Lazy
 
         /// MappingLens es una estructura auxiliar creada para, de ser necesario, guardar los tamanios de los mappings de ClubSemRust
         mapping_lens:MappingLens,
@@ -544,12 +539,12 @@ mod registro_de_pagos_club_sem_rust {
 
         #[cfg(not(test))] 
         pub fn ahora(&self) ->Timestamp{
-            self.env().block_timestamp() 
+            self.env().block_timestamp()
         }
         
         #[cfg(test)] 
         pub fn ahora(&self) ->Timestamp{
-            45184555
+            1_689_359_253_000
         }
         /// Retorna true si el caller tiene permisos suficientes para la mayoria de operaciones
         fn tiene_permiso(&self) -> bool{
@@ -614,7 +609,7 @@ mod registro_de_pagos_club_sem_rust {
             if cumple_las_condiciones_para_obtener_la_bonificacion {monto_cuota -= monto_cuota*(self.porcentaje_de_descuento_por_bonificacion as u128)/100}
 
             let cuota=Pago{id:self.nueva_id(TipoId::Pago),socio_id,fecha_de_pago:None,
-                fecha_de_vencimiento,
+                fecha_de_vencimiento:fecha_de_vencimiento,
                 monto:(monto_cuota as u128), 
                 tiene_bonificacion:cumple_las_condiciones_para_obtener_la_bonificacion
             }; 
@@ -642,7 +637,7 @@ mod registro_de_pagos_club_sem_rust {
 
             if pagos[pago_id].fecha_de_pago.is_some(){return Err(Error::PagoYaPagado);};
 
-            pagos[pago_id].fecha_de_pago = Some(self.ahora());
+            pagos[pago_id].fecha_de_pago = Some(LocalDateTime::now(self).to_instant().to_miliseconds() as u64);
             self.pagos.set(&pagos);
             
             Ok(())
@@ -882,9 +877,9 @@ mod registro_de_pagos_club_sem_rust {
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes);}
             if !self.es_momento_de_otra_actualizacion() {return Err(Error::NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamado);}
 
-            let ahora = self.ahora(); 
+            let ahora = self.ahora();
             for i in 1..self.mapping_lens.socios+1 {
-                match self.crear_cuota_para_socio(i, ahora){
+                match self.crear_cuota_para_socio(i, ahora+864_000_000){// cantidad de milisegundos en 10 dias
                     Ok(_)=>{},
                     Err(error)=>{return Err(error)}
                 } 
@@ -932,7 +927,7 @@ mod registro_de_pagos_club_sem_rust {
             let socio=Socio{id:self.nueva_id(TipoId::Socio),categoria,datos_personales:info_personal_del_socio};
             self.socios.insert(socio.id, &socio);
 
-            return self.crear_cuota_para_socio(socio.id, self.ahora()+604800); 
+            return self.crear_cuota_para_socio(socio.id, self.ahora()+864_000_000); 
         }
 
 
@@ -1256,7 +1251,7 @@ mod registro_de_pagos_club_sem_rust {
         /// Posibles Error: NoSePoseenLosPermisosSuficientes
         fn get_pagos(&self) -> Result<Vec<Pago>,Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
-            let todos_los_pagos = self.pagos.get_or_default(); 
+            let todos_los_pagos = self.pagos.get_or_default(); //CONSULTA: tambien podria ser self.pagos.get();
             Ok(todos_los_pagos)
         }
 
@@ -1305,9 +1300,9 @@ mod registro_de_pagos_club_sem_rust {
         /// Posibles Error: NoSePoseenLosPermisosSuficientes
         fn get_pagos_del_mes_y_anio(&self,mes_y_anio:LocalDateTime) -> Result<Vec<Pago>,Error>{
             if !self.tiene_permiso() {return Err(Error::NoSePoseenLosPermisosSuficientes)}
-            let pagos_del_mes_y_anio = self.get_pagos().unwrap().into_iter().filter(|p|{ let fecha_de_vencimiento_pago = LocalDateTime::at(p.fecha_de_vencimiento as i64).date();
-                fecha_de_vencimiento_pago.month() == mes_y_anio.date().month() &&
-                fecha_de_vencimiento_pago.year() == mes_y_anio.date().year()})      .collect();
+            let pagos_del_mes_y_anio = self.get_pagos().unwrap().into_iter().filter(|p|
+                LocalDateTime::at(p.fecha_de_vencimiento as i64).date().month() == mes_y_anio.date().month() &&
+                LocalDateTime::at(p.fecha_de_vencimiento as i64).date().year() == mes_y_anio.date().year())      .collect();
             Ok(pagos_del_mes_y_anio)
         }
 
@@ -1762,8 +1757,8 @@ mod registro_de_pagos_club_sem_rust {
             crear_y_cargar_categorias(&mut club);
 
             assert_eq!(club.actualizacion_mensual().err().unwrap(),Error::NoTranscurrioElTiempoNecesarioDesdeElUltimoLlamado);
-            // Forzamos a que ya sea momento de otra actualizacion, restando los segundos en un mes a la fecha de la ultima actualizacion
-            club.fecha_de_la_ultima_actualizacion-= 2678400;
+            // Forzamos a que ya sea momento de otra actualizacion, restando los milisegundos en un mes a la fecha de la ultima actualizacion
+            club.fecha_de_la_ultima_actualizacion-= 2_678_400_000; // cantidad milisegundos en un mes
             assert!(club.actualizacion_mensual().is_ok());
         }
         #[ink::test]
@@ -1819,14 +1814,14 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni1, Categoria::A).is_ok());
             let id1 = club.get_id_socio_con_dni(dni1).unwrap();
 
-            assert!((club.crear_cuota_para_socio(id1,mes_y_anio_de_venicimiento_buscados.to_instant().seconds())).is_ok());
-            assert!((club.crear_cuota_para_socio(id1,fecha_de_vencimiento_no_buscada.to_instant().seconds())).is_ok());
+            assert!((club.crear_cuota_para_socio(id1,mes_y_anio_de_venicimiento_buscados.to_miliseconds())).is_ok());
+            assert!((club.crear_cuota_para_socio(id1,fecha_de_vencimiento_no_buscada.to_miliseconds())).is_ok());
             
             let dni2 = 57;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni2, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
             let id2 = club.get_id_socio_con_dni(dni2).unwrap();
-            assert!((club.crear_cuota_para_socio(id2,mes_y_anio_de_venicimiento_buscados.to_instant().seconds())).is_ok());
-            assert!((club.crear_cuota_para_socio(id2,fecha_de_vencimiento_no_buscada.to_instant().seconds())).is_ok());
+            assert!((club.crear_cuota_para_socio(id2,mes_y_anio_de_venicimiento_buscados.to_miliseconds())).is_ok());
+            assert!((club.crear_cuota_para_socio(id2,fecha_de_vencimiento_no_buscada.to_miliseconds())).is_ok());
 
             let pagos_del_club=club.get_pagos().unwrap();
             let pagos_anio_y_mes = club.get_data_pagos_del_mes_y_anio(10,2021).unwrap();
@@ -1881,8 +1876,8 @@ mod registro_de_pagos_club_sem_rust {
             club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::C);
             let id1 = club.get_id_socio_con_dni(dni).unwrap();
 
-            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(id1,LocalDateTime::at(fecha_de_vencimiento as i64).to_instant().seconds())).is_ok());
+            let fecha_de_vencimiento =  club.ahora() + 604_800_000;             
+            assert!((club.crear_cuota_para_socio(id1,fecha_de_vencimiento)).is_ok());
             
             let pagos =club.get_pagos_del_socio_con_id(id1);
             assert!(pagos.is_ok());
@@ -1930,8 +1925,8 @@ mod registro_de_pagos_club_sem_rust {
             assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
             // se le agregan 2 cuotas y las paga al dia
-            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64).to_instant().seconds())).is_ok());
+            let fecha_de_vencimiento =  club.ahora() + 604_800_000;
+            assert!((club.crear_cuota_para_socio(socio_id,fecha_de_vencimiento)).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),2);
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
             assert!(!pago.tiene_bonificacion);
@@ -1942,8 +1937,8 @@ mod registro_de_pagos_club_sem_rust {
             // no tiene bonificacion todavia
             assert!(!club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
 
-            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64).to_instant().seconds())).is_ok());
+            let fecha_de_vencimiento =  club.ahora() + 604_800_000;
+            assert!((club.crear_cuota_para_socio(socio_id,fecha_de_vencimiento)).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),3);
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
             assert!(!pago.tiene_bonificacion);
@@ -1955,8 +1950,8 @@ mod registro_de_pagos_club_sem_rust {
             assert!(club.socio_cumple_las_condiciones_para_obtener_la_bonificacion(socio_id).unwrap());
             
             // se le agrega otra cuota (esta tiene bonificacion) y la paga al dia
-            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64).to_instant().seconds())).is_ok());
+            let fecha_de_vencimiento =  club.ahora() + 604_800_000;
+            assert!((club.crear_cuota_para_socio(socio_id,fecha_de_vencimiento)).is_ok());
             assert_eq!(club.pagos.get_or_default().len(),4);
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
             assert!(pago.tiene_bonificacion);
@@ -2066,14 +2061,14 @@ mod registro_de_pagos_club_sem_rust {
             // lo que se hace es simil "test_actualizacion_mensual", como para que al ejecutar actualizacion mensual en registrar_nuevo_pago, retorne Ok
             let mut club=crear_club_sem_rust();
             crear_y_cargar_categorias(&mut club);
-            club.fecha_de_la_ultima_actualizacion-= 2678400;
+            club.fecha_de_la_ultima_actualizacion-= 2_678_400_000; // cantidad milisegundos en un mes
 
             let dni = 75;
             assert!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),dni, Categoria::B { deporte_seleccionado_por_el_usuario: (Actividad::Futbol) }).is_ok());
             let socio_id = club.get_id_socio_con_dni(dni).unwrap();
 
-            let fecha_de_vencimiento =  LocalDateTime::now(&club).to_instant().seconds() + 604800;
-            assert!((club.crear_cuota_para_socio(socio_id,LocalDateTime::at(fecha_de_vencimiento as i64).to_instant().seconds())).is_ok());
+            let fecha_de_vencimiento =  club.ahora() + 604_800_000;
+            assert!((club.crear_cuota_para_socio(socio_id,fecha_de_vencimiento)).is_ok());
             let pago = club.get_primer_pago_sin_acreditar_del_socio_con_id(socio_id).unwrap();
             assert!(club.registrar_nuevo_pago(socio_id, pago.monto).is_ok());
         }
@@ -2083,7 +2078,7 @@ mod registro_de_pagos_club_sem_rust {
             assert_eq!(club.registrar_nuevo_socio("charlie".to_string(),"Ricciardi".to_string(),50, Categoria::C).err().unwrap(),Error::CategoriaSinData);
 
             // Si no se carga la data de la categoria no se permite agregar un nuevo socio, acualizacion mensual retorna Ok(), pero sin crear ninguna cuota
-            club.fecha_de_la_ultima_actualizacion-= 2678400;
+            club.fecha_de_la_ultima_actualizacion-= 2_678_400_000; // cantidad milisegundos en un mes
             assert!(club.actualizacion_mensual().is_ok());
             assert_eq!(club.get_pagos().unwrap().len(),0);
 
@@ -2094,7 +2089,7 @@ mod registro_de_pagos_club_sem_rust {
             club.socios.insert(socio.id, &socio);
 
             // ya que la categoria del socio no tiene su data cargada, al llamar crear_cuota_para_socio dentro de actualizacion_mensual, saltara el error
-            club.fecha_de_la_ultima_actualizacion-= 2678400;
+            club.fecha_de_la_ultima_actualizacion-= 2_678_400_000; // cantidad milisegundos en un mes
             assert_eq!(club.actualizacion_mensual().err().unwrap(),Error::CategoriaSinData)
         }
 
